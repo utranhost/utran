@@ -1,22 +1,91 @@
 import asyncio
 from asyncio import StreamWriter
+from collections import defaultdict
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 import inspect
-import json
-from typing import Union
-import zlib
+import ujson
+from typing import List, Union
+
 
 from aiohttp.web_ws import WebSocketResponse
 from enum import Enum
 
 class HeartBeat(Enum):
-    PING= b'PING'
-    PONG= b'PONG'
+    PING:bytes= b'PING'
+    PONG:bytes= b'PONG'
+
+class UtRequestType(Enum):
+    GET:str = 'get'
+    RPC:str = 'rpc'
+    POST:str = 'post'
+    SUBSCRIBE:str = 'subscribe'
+    UNSUBSCRIBE:str = 'unsubscribe'
+    PUBLISH:str = 'publish'
+
+class UtState(Enum):
+    """状态"""
+    FAILED:str = 'failed'
+    SUCCESS:str = 'success'
+
+@dataclass
+class UtBaseRequest:
+    """基础请求体"""
+    id:int
+    
+    def to_dict(self):
+        d = self.__dict__
+        if d.get('requestType'):
+            d['requestType'] = d['requestType'].value
+        return 
+
+@dataclass
+class RpcRequest(UtBaseRequest):
+    """Rpc请求体"""
+    methodName: str
+    args: Union[tuple, list] = field(default_factory=tuple)
+    dicts: dict = field(default_factory=lambda: defaultdict(list))
+    requestType: UtRequestType = UtRequestType.RPC
+
+@dataclass
+class PubRequest(UtBaseRequest):
+    """Publish请求体"""
+    topic: str
+    msg: any
+    requestType:UtRequestType= UtRequestType.PUBLISH
+
+@dataclass
+class SubRequest(UtBaseRequest):
+    """Subscribe请求体"""
+    topics:List[str]
+    requestType:UtRequestType= UtRequestType.SUBSCRIBE
+
+@dataclass
+class UnSubRequest(UtBaseRequest):
+    """Unsubscribe请求体"""
+    topics:List[str]
+    requestType: UtRequestType = UtRequestType.UNSUBSCRIBE
 
 
-def unpack_data(data:bytes, buffer:bytes=b'',maxsize:int=102400)->tuple:
+@dataclass
+class UtResponse:
+    """响应体"""
+    id:int                              #本次请求的id
+    responseType:UtRequestType
+    state:UtState
+    methodName: Union[str,None] = None
+    result:any = None                   #执行结果
+    error:str = ''                      # 失败信息，执行失败时才会有内容
+    
+    def to_dict(self):
+        d = self.__dict__
+        d['responseType'] = d['responseType'].value
+        d['state'] = d['state'].value
+        return d
+
+
+def unpack_data(data:bytes, buffer:bytes=b'',maxsize:int=102400)->tuple[Union[bytes,None],Union[bytes,None],bytes]:
     """
     从接收到的字节流中解析出完整的消息
     :param data: 接收到的字节流
@@ -56,26 +125,26 @@ def unpack_data(data:bytes, buffer:bytes=b'',maxsize:int=102400)->tuple:
         raise Exception('Message too long')
     
     
-    # 解析compress
-    compress_start = length_end + 1
-    compress_end = buffer.find(b'\n', compress_start)
+    # 解析是否加密
+    encrypt_start = length_end + 1
+    encrypt_end = buffer.find(b'\n', encrypt_start)
     
-    if compress_end == -1:
+    if encrypt_end == -1:
         return None, None, buffer
     
-    compress_str = buffer[compress_start:compress_end]
+    encrypt_str = buffer[encrypt_start:encrypt_end]
     
-    if not compress_str.startswith(b'compress:'):
-        raise Exception('Error: Invalid message format. Missing "compress" keyword in third line.')
+    if not encrypt_str.startswith(b'encrypt:'):
+        raise Exception('Error: Invalid message format. Missing "encrypt" keyword in third line.')
 
     try:
-        compress = int(compress_str.split(b':')[1])
+        encrypt = int(encrypt_str.split(b':')[1])
     except:
-        raise Exception('Error: Value error. "compress" value error in third line.')
+        raise Exception('Error: Value error. "encrypt" value error in third line.')
 
 
     # 解析数据内容
-    data_start = compress_end + 1
+    data_start = encrypt_end + 1
     data_end = data_start + message_length
     
     if len(buffer) < data_end:
@@ -85,25 +154,29 @@ def unpack_data(data:bytes, buffer:bytes=b'',maxsize:int=102400)->tuple:
     message_data = buffer[data_start:data_end]        
     remaining_data = buffer[data_end:]
     
-    if compress:
-        message_data = zlib.decompress(message_data)
+    if encrypt:
+        # 加密算法还未实现
+        pass
 
     return name, message_data, remaining_data
     
 
-def pack_data(name:str, message:dict, compress=False)->bytes:
+def pack_data(res:UtResponse,encrypt=False)->bytes:
     """
     将要发送的消息打包成二进制格式
     :param name: 请求类型的名称
     :param message: 要发送的消息（dict类型）
-    :param compress: 是否压缩数据
+    :param encrypt: 是否加密数据
     :return: 打包后的二进制数据
     """
+    name:str = res.responseType.value
+    message:dict = res.to_dict()
+
+    message_json = ujson.dumps(message).encode('utf-8')
     
-    message_json = json.dumps(message).encode('utf-8')
-    
-    if compress:
-        message_json = zlib.compress(message_json)
+    if encrypt:
+        # 加密算法还未实现
+        pass
             
     message_length = len(message_json)
     
@@ -111,7 +184,7 @@ def pack_data(name:str, message:dict, compress=False)->bytes:
     data = b''
     data += name.encode('utf-8') + b'\n'
     data += f'length:{message_length}\n'.encode('utf-8')
-    data += f'compress:{int(compress)}\n'.encode('utf-8')
+    data += f'encrypt:{int(encrypt)}\n'.encode('utf-8')
     data += message_json
     
     return data
@@ -223,15 +296,21 @@ class RMethod:
         self.asyncfunc:bool = inspect.iscoroutinefunction(self.callable)
 
 
-    async def execute(self,args:tuple,dicts:dict)->dict:
-        response = dict()
+    async def execute(self,args:tuple,dicts:dict)->tuple[UtState,any,str]:
+        """ 执行注册的函数或方法
+        Returns:
+            返回值：状态，结果，错误信息
+        """
+        result = None
+        state = UtState.SUCCESS
+        error = ''
         if self.checkParams:
             try:
                 args,dicts = cheekType(self.params,self.annotations,args,dicts)
             except Exception as e:
-                response['state'] = 'failed'
-                response['error'] = str(e)
-                return response
+                state = UtState.FAILED
+                error = str(e)
+                return state,result,error
         try:
             if self.asyncfunc:
                 res = await self.callable(*args,**dicts)
@@ -239,20 +318,18 @@ class RMethod:
                 res = self.callable(*args,**dicts)
             if self.checkReturn and self.returnType:
                 try:
-                    res= allowType(res,self.returnType,self.name)
-                    response['state'] = 'success'
-                    response['result'] = res
+                    res= allowType(res,self.returnType,self.name)                    
+                    result = res
                 except:
-                    response['state'] = 'failed'
-                    response['error'] = f"Return value error.'{type(res)}' is not of '{self.returnType}' type"
-            else:
-                response['state'] = 'success'
-                response['result'] = res
+                    state = UtState.FAILED
+                    error = f"Return value error.'{type(res)}' is not of '{self.returnType}' type"
+            else:                
+                result = res
         except Exception as e:
-            response['state'] = 'failed'
-            response['error'] = str(e)
+            state = UtState.FAILED
+            error = str(e)
         
-        return response
+        return state,result,error
 
 
 class Register:
@@ -377,15 +454,15 @@ class Register:
 
 class ClientConnection:
 
-    def __init__(self,id:str,sender:Union[StreamWriter,WebSocketResponse],compress:bool=False):
+    def __init__(self,id:str,sender:Union[StreamWriter,WebSocketResponse],encrypt:bool=False):
         self.topics = []
         self.id = id
         self.sender = sender
-        self._compress=compress
+        self._encrypt=encrypt
 
-    async def send(self,responseName:str,msg:dict):        
+    async def send(self,response:UtResponse):
         if isinstance(self.sender,StreamWriter):
-            msg = pack_data(responseName,msg,self._compress)
+            msg = pack_data(response,self._encrypt)
             await self.__send_by_sw(msg)
         elif isinstance(self.sender,WebSocketResponse):
             await self.__send_by_ws(msg)
@@ -486,31 +563,41 @@ class SubscriptionContainer:
 
 async def process_request(request:dict,connection:ClientConnection,register:Register,sub_container:SubscriptionContainer)->bool:
     """处理请求总入口
-    
+    Union[RpcRequest,PubRequest,SubRequest,UnSubRequest]
     Returns:
         返回一个布尔值,是否结束连接
     """
-    if request.get('jsonrpc'):
+    requestType = request.get('requestType')
+    id = request.get("id")
+    
+    if UtRequestType.RPC.value==requestType:
         #  Rpc请求
-        return await process_rpc_request(request,connection,register)
+        methodName = request.get("methodName")
+        args = request.get("args")
+        dicts = request.get("dicts")
+        return await process_rpc_request(RpcRequest(id=id,methodName=methodName,args=args,dicts=dicts),connection,register)
 
-    elif request.get('unsubscribe'):
-        # 取消订阅 topic
-        return await process_unsubscribe_request(request,connection,sub_container)
+    elif UtRequestType.UNSUBSCRIBE.value==requestType:
+        # 取消订阅 topic        
+        topics = request.get("topics")
+        return await process_unsubscribe_request(UnSubRequest(id=id,topics=topics),connection,sub_container)
 
-    elif request.get('subscribe'):
+    elif UtRequestType.SUBSCRIBE.value==requestType:
         # 订阅 topic
-        return await process_subscribe_request(request,connection,sub_container)
+        topics = request.get("topics")
+        return await process_subscribe_request(SubRequest(id=id,topics=topics),connection,sub_container)
 
-    elif request.get('publish'):
-        return await process_publish_request(request,sub_container)
+    elif UtRequestType.PUBLISH.value==requestType:
+        topic = request.get("topic")
+        msg = request.get("msg")
+        return await process_publish_request(PubRequest(id=id,topic=topic,msg=msg),sub_container)
 
     else:
         # logging.log(f"处理请求时,出现不受支持的请求,请求的内容：{request}")
         return True
 
 
-async def process_rpc_request(request:dict,connection:ClientConnection,register:Register)->bool:
+async def process_rpc_request(request:RpcRequest,connection:ClientConnection,register:Register)->bool:
     """
     # 处理rpc请求
     Args:
@@ -560,30 +647,38 @@ async def process_rpc_request(request:dict,connection:ClientConnection,register:
         返回一个布尔值,是否结束连接
 
     """
-    method_name:str = request.get('method')
-    args:tuple = request.get('args') or tuple()
-    dicts:dict = request.get('dicts') or dict()
+    method_name:str = request.methodName
+    args:tuple = request.args
+    dicts:dict = request.dicts
     rm:RMethod = register.methods_of_rpc.get(method_name) if method_name else None
-    response = dict(jsonrpc='2.0',id=request.get('id'),method=method_name)
+    response = UtResponse(id=request.id,
+                          state=UtState.SUCCESS,
+                          methodName=method_name,
+                          responseType=request.requestType)
 
     if rm:
-        response.update(await rm.execute(args,dicts))
+        state,result,error = await rm.execute(args,dicts)
+        if state == UtState.FAILED:
+            response.state = UtState.FAILED
+            response.error = error
+        else:
+            response.result = result
     else:
-        response['state'] = 'failed'
-        response['error'] = f'The rpc server does not have "{method_name}" methods. '
+        response.state = UtState.FAILED
+        response.error = f'The rpc server does not have "{method_name}" methods. '
     
-    await connection.send('jsonrpc',response)
+    await connection.send(response)
     return False
 
 
-async def process_subscribe_request(request:dict,connection:ClientConnection,sub_container:SubscriptionContainer)->bool:
+async def process_subscribe_request(request:SubRequest,connection:ClientConnection,sub_container:SubscriptionContainer)->bool:
     """
     # 处理subscribe订阅请求
     Args:
-        uid (str): 主体的uid
-        request (dict): 请求体            
-        writer (StreamWriter): 写入端
-    
+        request (SubRequest): 请求体            
+        connection (ClientConnection): 客户端连接
+        sub_container (SubscriptionContainer): 存放订阅者的容器
+
     ## request 请求体格式↓
     Attributes:
         id (int):  本次请求的id
@@ -603,27 +698,27 @@ async def process_subscribe_request(request:dict,connection:ClientConnection,sub
 
     """
 
-    topics:list = request.get('topics')
+    topics:list = request.topics
     
-    response = dict()
-    response.update(request)
+    response = UtResponse(id=connection.id,
+                        responseType=UtRequestType.SUBSCRIBE,
+                        state=UtState.SUCCESS)
+
     if not topics:
-        response['state'] = 'failed'
-        response['error'] = '没有指定topic'
-        await connection.send('subscribe',response)
+        response.error = '没有指定topic'
+        await connection.send(response)
         return True
-    else:            
+    else:
         if not sub_container.has_sub(connection.id):
             sub_container.add_sub(connection,topics)
         else:
             sub_container.add_topic(connection.id,topics)
 
-        response['state'] = 'success'
-        await connection.send('subscribe',response)
+        await connection.send(response)
         return False
     
 
-async def process_unsubscribe_request(request:dict,connection:ClientConnection,sub_container:SubscriptionContainer)->bool:
+async def process_unsubscribe_request(request:UnSubRequest,connection:ClientConnection,sub_container:SubscriptionContainer)->bool:
     """
     # 处理unsubscribe取消订阅请求
     Args:
@@ -649,22 +744,21 @@ async def process_unsubscribe_request(request:dict,connection:ClientConnection,s
         返回一个布尔值,是否结束连接
     """
 
-    topics:list = request.get('topics') or []
-    response = dict()
-    response.update(request)
+    topics:list = request.topics
+    response =UtResponse(id=request.id,responseType=request.requestType,state=UtState.SUCCESS)
+
     if sub_container.has_sub(connection.id):
-        sub_container.remove_topic(connection.id,topics)
-        response['state'] = 'success'
-        await connection.send('unsubscribe',response)
+        sub_container.remove_topic(connection.id,topics)        
+        await connection.send(response)
         return False
     else:
-        response['state'] = 'failed'
-        response['error'] = '未订阅任何topic，请先成为订阅者'
-        await connection.send('unsubscribe',response)
+        response.state = UtState.FAILED
+        response.error = '未订阅任何topic，请先成为订阅者'
+        await connection.send(response)
         return True
 
 
-async def process_publish_request(request:dict,sub_container:SubscriptionContainer)->bool:
+async def process_publish_request(request:PubRequest,sub_container:SubscriptionContainer)->bool:
     """
     # 处理publish发布请求
     Args:
@@ -683,11 +777,11 @@ async def process_publish_request(request:dict,sub_container:SubscriptionContain
     Returns:
         返回一个布尔值,是否结束连接
     """
-    topic:str = request.get('topic')
-    msg:dict = request.get('msg')
+    topic:str = request.topic
+    msg:dict = request.msg
 
     # asyncio.sleep(0) 释放控制权，用于防止publish被持续不间断调用而导致的阻塞问题
-    if not topic:
+    if not request.topic:
         # logging.warning(f"推送了一个空topic")
         asyncio.sleep(0)
         return True

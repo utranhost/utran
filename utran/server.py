@@ -1,6 +1,6 @@
 import asyncio
 from asyncio import StreamWriter,StreamReader
-import json
+import ujson
 import time
 import uuid
 
@@ -14,6 +14,8 @@ from utils import (pack_data,
                    process_request)
 
 from utils import RMethod,Register,ClientConnection,SubscriptionContainer,HeartBeat
+from utils import UtState
+
 
 class WebServer:    
     def __init__(
@@ -22,13 +24,13 @@ class WebServer:
         register:Register,
         sub_container:SubscriptionContainer,
         limitHeartbeatInterval:int = 1,
-        dataCompress:bool=False)->None:
+        dataEncrypt:bool=False)->None:
     
         self.__host = host
         self.__port = port
         self.__register = register
         self.__sub_container = sub_container
-        self.__dataCompress = dataCompress
+        self.__dataEncrypt = dataEncrypt
         self.__limitHeartbeatInterval = limitHeartbeatInterval
 
 
@@ -67,26 +69,27 @@ class WebServer:
                 if '=' in p:
                     k,v = p.split('=')
                     dicts[k.strip()]=v.strip()
-            execute_res = await rm.execute(args=tuple(),dicts=dicts)
-            if execute_res.get('state') == 'failed': status=422
+            state,result,error = await rm.execute(args=tuple(),dicts=dicts)
+            execute_res['state'] = state.value
+            execute_res['error'] = error
+            execute_res['result'] = result
+            if state == UtState.FAILED:status=422
         else:
             execute_res['state'] = 'failed'
             execute_res['error'] = f'Not found!'
             status = 400
-            return web.Response(status=status,text=json.dumps(execute_res),content_type='application/json')
+            return web.Response(status=status,text=ujson.dumps(execute_res),content_type='application/json')
 
-
-        result = execute_res.get('result')
         if isinstance(result,web.Response):
             return result
         else:
-            return web.Response(status=status,text=json.dumps(execute_res),content_type='application/json')
+            return web.Response(status=status,text=ujson.dumps(execute_res),content_type='application/json')
 
 
     async def websocket_handler(self,ws:web_ws.WebSocketResponse):
         """处理websocket请求"""
         unique_id:str = str(uuid.uuid4())
-        connection = ClientConnection(unique_id,ws,self.__dataCompress)
+        connection = ClientConnection(unique_id,ws,self.__dataEncrypt)
         t = float('-inf')
         async for msg in ws:
 
@@ -100,7 +103,7 @@ class WebServer:
             if msg.type == WSMsgType.TEXT:
                 try:
                     if msg.data:
-                        res:dict = json.loads(msg.data)
+                        res:dict = ujson.loads(msg.data)
                         if type(res)!=dict:break
 
                         # 处理请求
@@ -135,7 +138,7 @@ class Server:
         checkReturn:bool=True,
         dataMaxsize:int=102400,
         limitHeartbeatInterval:int = 1,
-        dataCompress:bool=False) -> None:
+        dataEncrypt:bool=False) -> None:
     
 
         self.__host = host
@@ -144,7 +147,7 @@ class Server:
         
         self.__limitHeartbeatInterval = limitHeartbeatInterval
         self.__dataMaxsize = dataMaxsize
-        self.__dataCompress = dataCompress
+        self.__dataEncrypt = dataEncrypt
 
         
         # 实例化订阅者容器
@@ -154,7 +157,7 @@ class Server:
         self.__register = Register(checkParams,checkReturn)
 
         self.__server = None
-        self.__webServer = WebServer(host,web_port,self.__register,self.__sub_container,limitHeartbeatInterval,dataCompress)
+        self.__webServer = WebServer(host,web_port,self.__register,self.__sub_container,limitHeartbeatInterval,dataEncrypt)
 
 
 
@@ -198,7 +201,7 @@ class Server:
     async def __handle_client(self,reader:StreamReader, writer:StreamWriter):
         unique_id:str = str(uuid.uuid4())
         buffer = b''
-        connection = ClientConnection(unique_id,writer,self.__dataCompress)
+        connection = ClientConnection(unique_id,writer,self.__dataEncrypt)
         t = float('-inf')
         while True:
             data = await reader.read(1024)
@@ -219,8 +222,9 @@ class Server:
             try:
                 requestName, request, buffer = unpack_data(data, buffer,self.__dataMaxsize)
                 if request is None:continue
-                request:bytes = request.decode('utf-8')
-                res:dict = json.loads(request)
+
+                request:str = request.decode('utf-8')
+                res:dict = ujson.loads(request)
                 if type(res) != dict: 
                     raise ValueError('rpc请求数据必须是dict类型')
             except Exception as e:

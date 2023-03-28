@@ -3,6 +3,20 @@ import json
 import socket
 import zlib
 
+from utils import (pack_data,
+                   unpack_data)
+
+REQUEST_ID:int=0
+
+
+
+
+def gen_request(requestType,method_name,args,dicts)->dict:
+    global REQUEST_ID
+    """生成请求"""
+    REQUEST_ID += 1    
+    return pack_data(requestType,{requestType:'2.0', 'id': REQUEST_ID, 'method':method_name, 'args':args, 'dicts':dicts})
+
 
 class ResultQueue:
     _resluts = dict() # {id:res,id2:res}
@@ -18,117 +32,72 @@ class ResultQueue:
         
 
     def pull(self,id:int):
-        """拉取数据，并删除"""        
+        """拉取数据，并删除""" 
         if id in self._resluts:
             return self._resluts.pop(id)
         else:
             # asyncio.sleep(0)
             return
-        
-def unpack_data(data:bytes, buffer:bytes=b'',maxsize:int=102400)->tuple:
-    """
-    从接收到的字节流中解析出完整的消息
-    :param data: 接收到的字节流
-    :param buffer: 缓冲区中未处理完的数据
-    :param maxsize: 支持数据的最大长度
-    :return: 如果解析成功完整消息，则返回请求类型的名称，消息和剩余字节流；否则返回None和原始字节流
-    """
-    buffer += data
-    
-    if len(buffer) < 4:
-        return None, None, buffer
-    
-    # 解析名称
-    name_end = buffer.find(b'\n')
-    if name_end == -1:
-        return None, None, buffer
-    
-    
-    # 解析length
-    length_start = name_end + 1
-    length_end = buffer.find(b'\n', length_start)
-    
-    if length_end == -1:
-        return None, None, buffer      
-
-    length_str = buffer[length_start:length_end]
-    
-    if not length_str.startswith(b'length:'):
-        raise Exception('Error: Invalid message format. Missing "length" keyword in second line.')
-    
-    try:
-        message_length = int(length_str.split(b':')[1])
-    except:
-        raise Exception('Error: Value error. "length" value error in second line.')
-    
-    if message_length > maxsize:
-        raise Exception('Message too long')
-    
-    
-    # 解析compress
-    compress_start = length_end + 1
-    compress_end = buffer.find(b'\n', compress_start)
-    
-    if compress_end == -1:
-        return None, None, buffer
-    
-    compress_str = buffer[compress_start:compress_end]
-    
-    if not compress_str.startswith(b'compress:'):
-        raise Exception('Error: Invalid message format. Missing "compress" keyword in third line.')
-
-    try:
-        compress = int(compress_str.split(b':')[1])
-    except:
-        raise Exception('Error: Value error. "compress" value error in third line.')
 
 
-    # 解析数据内容
-    data_start = compress_end + 1
-    data_end = data_start + message_length
-    
-    if len(buffer) < data_end:
-        return None, None, buffer
-    
-    name = buffer[:name_end]
-    message_data = buffer[data_start:data_end]        
-    remaining_data = buffer[data_end:]
-    
-    if compress:
-        message_data = zlib.decompress(message_data)
-
-    return name, message_data, remaining_data
-    
-
-    
+class SyncClient:
+    def __init__(self,host='localhost', port=8080) -> None:
+        self.__host = host
+        self.__port = port
+        self.__reslutqueue = ResultQueue()
+        self.__id = 0
+        self._isconnected=False
+        self._buffer = b''
 
 
+    def connect(self):
+        """连接服务端"""
+        if self._isconnected:
+            return
 
-def pack_data(name:str, message:dict, compress=False):
-    """
-    将要发送的消息打包成二进制格式
-    :param name: 请求类型的名称
-    :param message: 要发送的消息（dict类型）
-    :param compress: 是否压缩数据
-    :return: 打包后的二进制数据
-    """
-    
-    message_json = json.dumps(message).encode('utf-8')
-    
-    if compress:
-        message_json = zlib.compress(message_json)
-            
-    message_length = len(message_json)
-    
-    # 打包数据
-    data = b''
-    data += name.encode('utf-8') + b'\n'
-    data += f'length:{message_length}\n'.encode('utf-8')
-    data += f'compress:{int(compress)}\n'.encode('utf-8')
-    data += message_json
-    
-    return data
+        self.__socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.__socket.connect((self.__host, self.__port))
+        self._isconnected = True
 
+
+    def call(self,method_name,*args,**dicts):
+        """远程调用"""
+        request:dict = self.gen_request(method_name,args,dicts)
+        request_packet = pack_data('jsonrpc',request)
+        self.__socket.sendall(request_packet)
+        try:
+            while True:
+                chunk = self.__socket.recv(1024)
+                if not chunk:
+                    raise ConnectionError('Connection closed by server')
+                name,message, self._buffer = unpack_data(chunk, self._buffer)
+                
+                if message is not None:
+                    response:dict = json.loads(message.decode('utf-8').strip())
+                    self.__reslutqueue.push(response)
+                    
+                response = self.__reslutqueue.pull(request['id'])
+                if response:
+                    return response
+                
+        except Exception as e:
+            self.close()
+            raise e
+
+
+    def close(self):
+        """关闭"""
+        if self.__socket:
+            try:
+                self.__socket.sendall('')  # 发送空信息，告诉服务端关闭连接                
+            except:
+                try:
+                    self.__socket.shutdown(socket.SHUT_RDWR)  # 关闭读和写
+                except OSError:
+                    pass
+            finally:
+                self.__socket.close()
+                self.__socket = None
 
 
 class Rpc:
