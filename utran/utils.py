@@ -2,7 +2,7 @@ from asyncio import StreamWriter
 import uuid
 
 import ujson
-from typing import Union
+from typing import List, Union
 
 from aiohttp.web_ws import WebSocketResponse
 from utran.object import UtResponse
@@ -131,7 +131,7 @@ class ClientConnection:
             msg = pack_data(response,self._encrypt)
             await self.__send_by_sw(msg)
         elif isinstance(self.sender,WebSocketResponse):
-            await self.__send_by_ws(msg)
+            await self.__send_by_ws(response.to_dict())
         else:
             raise RuntimeError('Invalid sender, it must be an instance of StreamWriter or WebSocketResponse')
     
@@ -140,22 +140,28 @@ class ClientConnection:
         w.write(msg)
         await w.drain()
 
-    async def __send_by_ws(self,msg:bytes):
+    async def __send_by_ws(self,msg:dict):
         w:WebSocketResponse = self.sender
-        await w.send_json(msg)
+        await w.send_str(ujson.dumps(msg))
 
 
-    def add_topic(self,topic:str):
+    def add_topic(self,topic:str)->Union[str,None]:
+        """# 添加指定的topic
+        Returns:
+            返回添加成功的topic
+        """
         if topic not in self.topics:
             self.topics.append(topic)
+            return topic
  
-    def remove_topic(self,topic:Union[str,list]):
-        if type(topic) is list:
-            for t in topic:
-                self.remove_topic(t)
-        else:
-            if topic in self.topics:
-                self.topics.remove(topic)
+    def remove_topic(self,topic:str)->Union[str,None]:
+        """# 移除指定的topic
+        Returns:
+            返回移除成功的topic
+        """
+        if topic in self.topics:
+            self.topics.remove(topic)
+            return  topic
 
 
 class SubscriptionContainer:
@@ -170,17 +176,23 @@ class SubscriptionContainer:
         self.__topics = dict()       # {话题1:[客户端id1,客户端id2,..],话题2:[客户端id1,..]}     
 
     def has_sub(self,subId:str):
+        """指定id 查询订阅者是否存在"""
         if subId in self.__subscribes:
             return True
         return False
 
-    def add_sub(self,cc:ClientConnection,topic:Union[str,list]=None):
+    def add_sub(self,cc:ClientConnection,topics:Union[str,list]=None)->Union[List[str],None]:
+        """# 添加订阅者
+        Returns:
+            返回本次成功订阅的topic   
+        """
         if cc.id not in self.__subscribes:
             self.__subscribes[cc.id] = cc
-        if topic != None:
-            self.add_topic(cc.id,topic)
+        if topics != None:
+            return self.add_topic(cc.id,topics)
 
     def add_sub_by_id(self,subId:str,sender:Union[StreamWriter,WebSocketResponse],topic:Union[str,list]=None):
+        """通过id添加订阅者"""
         if subId not in self.__subscribes:
             self.__subscribes[subId]= ClientConnection(subId,sender)
         if topic != None:
@@ -196,38 +208,63 @@ class SubscriptionContainer:
                         self.__topics[topic].remove(subId)
             return self.__subscribes.pop(subId)
 
-    def add_topic(self,subId:str,topic:Union[str,list]):
+    def add_topic(self,subId:str,topic:Union[str,list])->list:
+        """# 为订阅者，增加订阅话题
+        注: topic 会被转为纯小写
+        Returns:
+            返回本次成功订阅的topic        
+        """
+        ok = []
         if type(topic) is list:
             for t in topic:
-                self.add_topic(subId,t)
+                t_ = self.add_topic(subId,t)
+                if t_: ok.append(t_)
         else:
+            topic = topic.lower().strip()
+            if not topic: return
             s:ClientConnection = self.__subscribes.get(subId)
-            if s:
-                s.add_topic(topic)
+            if s:                
                 if topic not in self.__topics:
                     self.__topics[topic] = []
                 if subId not in self.__topics[topic]:
                     self.__topics[topic].append(subId)
+                return s.add_topic(topic)
+            else:
+                raise ValueError('订阅者不存在')
+        return ok
 
-
-    def remove_topic(self,subId:str,topic:Union[str,list]):
+    def remove_topic(self,subId:str,topic:Union[str,list])->List[str]:
+        """# 为订阅者，删除某些订阅话题
+        Returns:
+            返回本次移除成功的topic
+        """
+        ok = []
         if type(topic) is list:
             for t in topic:
-                self.remove_topic(subId,t)
+                t_ = self.remove_topic(subId,t)
+                if t_: 
+                    ok.append(t_)
         else:  
+            topic = topic.lower().strip()
+            if not topic: return
             s:ClientConnection = self.__subscribes.get(subId)
-            subIds:list = self.__topics.get(topic) or []
-            if s.id in subIds:
-                self.__topics[topic].remove(s.id)
             if s:
-                s.remove_topic(topic)
+                subIds:list = self.__topics.get(topic) or []
+                if s.id in subIds:
+                    self.__topics[topic].remove(s.id)
+                return s.remove_topic(topic)
+            else:
+                raise ValueError('订阅者不存在')
+        return ok
+
 
     def get_sub_by_id(self,subId:str)->ClientConnection:
+        """通过id获取订阅者的客户端连接实例"""
         return self.__subscribes.get(subId)
 
     def get_subId_by_topic(self,topic:str)->list:
         """获取指定话题下所有的订阅者的id"""
-        all_subId:list = self.__topics.get(topic)
+        all_subId:list = self.__topics.get(topic.lower().strip())
         all_subId = all_subId or []
         return all_subId
 

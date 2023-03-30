@@ -8,8 +8,13 @@ from utran.utils import ClientConnection, SubscriptionContainer
 
 
 async def process_request(request:dict,connection:ClientConnection,register:Register,sub_container:SubscriptionContainer)->bool:
-    """处理请求总入口
-    Union[RpcRequest,PubRequest,SubRequest,UnSubRequest]
+    """# 处理请求总入口
+    Args:
+        request (dict): 请求体
+        connection (ClientConnection): 客户端连接
+        register (Register): 注册类实例
+        sub_container (SubscriptionContainer): 存放订阅者的容器实例
+
     Returns:
         返回一个布尔值,是否结束连接
     """
@@ -19,8 +24,8 @@ async def process_request(request:dict,connection:ClientConnection,register:Regi
     if UtRequestType.RPC.value==requestType:
         #  Rpc请求
         methodName = request.get("methodName")
-        args = request.get("args")
-        dicts = request.get("dicts")
+        args = request.get("args") or tuple()
+        dicts = request.get("dicts") or dict()
         return await process_rpc_request(RpcRequest(id=id,methodName=methodName,args=args,dicts=dicts),connection,register)
 
     elif UtRequestType.UNSUBSCRIBE.value==requestType:
@@ -49,45 +54,16 @@ async def process_rpc_request(request:RpcRequest,connection:ClientConnection,reg
     Args:
         request (dict): 请求体
         connection (ClientConnection): 客户端连接
-        register (Register): 存放订阅者的容器
+        register (Register): 存放订阅者的容器实例
 
-    ## request 请求体格式↓
-    Attributes:
-        id (int):  本次请求的id
-        jsonrpc (str): 用于声明请求的类型，版本号2.0            
-        method (str): 需要远程调用的方法名
-        args (tuple): 元组参数
-        dicts (dict): 字典参数
-
-    样例:
-        request = {
-            'jsonrpc':'2.0',
-            'id': 1,
-            'method':method_name,
-            'args':args,
-            'dicts':dicts
-        }
-
-        
     ## response 响应体格式↓
     Attributes:
         id (int):  本次请求的id
-        jsonrpc (str): 用于声明请求的类型，版本号1.0
-        method (str): 需要远程调用的方法名            
-        result (dict): 执行结果
-        state (str): failed / success
-        error (str): 失败信息，执行失败时才会有该项
-
-    样例:
-        response = {
-        'jsonrpc':'2.0',
-        'id': 1,
-        'method':method_name,
-        'result':result,
-        'state': 'success',
-        'error':error
-        }
-
+        responseType (str): 'rpc'
+        state (int):  状态 0为失败，1为成功
+        methodName (str): 需要执行的方法或函数名
+        result (any): 执行结果
+        error (str): 失败信息，订阅失败时才会有该项 
 
     Returns:
         返回一个布尔值,是否结束连接
@@ -123,45 +99,42 @@ async def process_subscribe_request(request:SubRequest,connection:ClientConnecti
     Args:
         request (SubRequest): 请求体            
         connection (ClientConnection): 客户端连接
-        sub_container (SubscriptionContainer): 存放订阅者的容器
-
-    ## request 请求体格式↓
-    Attributes:
-        id (int):  本次请求的id
-        subscribe (str): 用于声明请求的类型，版本号1.0            
-        topics (list[str]):  这是一个列表，可以订阅多个topic
+        sub_container (SubscriptionContainer): 存放订阅者的容器实例
 
     ## response 响应体格式↓
     Attributes:
         id (int):  本次请求的id
-        subscribe (str): 用于声明请求的类型，版本号1.0
-        topics (list[str]):  这是一个列表，可以订阅多个topic
-        state (str): failed / success
+        responseType (str): 'subscribe'
+        state (int):  订阅状态 0为失败，1为成功
+        result (dict): 返回一个字典 {'subTopics':[本次成功订阅的话题],'allTopics'[该订阅者所有订阅的话题]:}
         error (str): 失败信息，订阅失败时才会有该项
+        methodName (str): None
 
     Returns:
-        返回一个布尔值,是否结束连接
+        返回一个布尔值,是否结束连接（该请求类型不会结束连接）
 
     """
 
-    topics:list = request.topics
-    
-    response = UtResponse(id=connection.id,
+    topics:list = request.topics    
+    response = UtResponse(id=request.id,
                         responseType=UtRequestType.SUBSCRIBE,
                         state=UtState.SUCCESS)
 
     if not topics:
-        response.error = '没有指定topic'
+        response.state = UtState.FAILED
+        response.result = dict(allTopics=connection.topics,subTopics=[])
+        response.error = '没有指定topics'
         await connection.send(response)
-        return True
     else:
         if not sub_container.has_sub(connection.id):
-            sub_container.add_sub(connection,topics)
+            t_ = sub_container.add_sub(connection,topics)
+            response.result = dict(allTopics=connection.topics,subTopics=t_)
         else:
-            sub_container.add_topic(connection.id,topics)
-
+            t_ = sub_container.add_topic(connection.id,topics)
+            response.result = dict(allTopics=connection.topics,subTopics=t_)
         await connection.send(response)
-        return False
+
+    return False
     
 
 async def process_unsubscribe_request(request:UnSubRequest,connection:ClientConnection,sub_container:SubscriptionContainer)->bool:
@@ -172,19 +145,14 @@ async def process_unsubscribe_request(request:UnSubRequest,connection:ClientConn
         request (dict): 请求体            
         hoding (bool): 是否处于订阅状态中
     
-    ## request 请求体格式↓
-    Attributes:
-        id (int):  本次请求的id
-        unsubscribe (str): 用于声明请求的类型，版本号1.0
-        topics (list[str]):  这是一个列表，可以取消订阅多个topic
-
     ## response 响应体格式↓
     Attributes:
         id (int):  本次请求的id
-        unsubscribe (str): 用于声明请求的类型，版本号1.0
-        topics (list[str]):  这是一个列表，可以取消订阅多个topic
-        state (str): failed / success
-        error (str): 失败信息，只有再非订阅状态才会失败
+        responseType (str): 'unsubscribe'
+        state (int):  状态 0为失败，1为成功        
+        result (dict): 返回一个字典 {'unSubTopics':[本次成功取消订阅的话题],'allTopics'[该订阅者所有订阅的话题]:}
+        error (str): 失败信息
+        methodName (str): None
         
     Returns:
         返回一个布尔值,是否结束连接
@@ -194,12 +162,13 @@ async def process_unsubscribe_request(request:UnSubRequest,connection:ClientConn
     response =UtResponse(id=request.id,responseType=request.requestType,state=UtState.SUCCESS)
 
     if sub_container.has_sub(connection.id):
-        sub_container.remove_topic(connection.id,topics)        
+        t_ = sub_container.remove_topic(connection.id,topics)
+        response.result = dict(unSubTopics=t_,allTopics=connection.topics)
         await connection.send(response)
         return False
     else:
         response.state = UtState.FAILED
-        response.error = '未订阅任何topic，请先成为订阅者'
+        response.error = '非订阅者，无法执行该操作，服务器将关闭连接！'
         await connection.send(response)
         return True
 
@@ -217,27 +186,26 @@ async def process_publish_request(request:PubRequest,sub_container:SubscriptionC
         topic (str): topic名称
         msg (dict): 发布的消息
 
-    样例:
-        request = {"publish":"1.0","topic":topic,"msg":msg}
-
     Returns:
         返回一个布尔值,是否结束连接
     """
     topic:str = request.topic
     msg:dict = request.msg
+    response =UtResponse(id=request.id,responseType=request.requestType,state=UtState.SUCCESS)
 
     # asyncio.sleep(0) 释放控制权，用于防止publish被持续不间断调用而导致的阻塞问题
     if not request.topic:
-        # logging.warning(f"推送了一个空topic")
-        asyncio.sleep(0)
+        response.state = UtState.FAILED
+        response.error = '推送了一个空topic，服务器将关闭连接！'
         return True
     
     subIds:list = sub_container.get_subId_by_topic(topic)
     for subid in subIds:
         sub:ClientConnection = sub_container.get_sub_by_id(subid)
-        if sub:await sub.send('publish',msg)
+        response.result = msg
+        if sub:await sub.send(response)
         
-    asyncio.sleep(0)
+    await asyncio.sleep(0)
     return False
 
 

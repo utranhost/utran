@@ -2,6 +2,7 @@
 import asyncio
 import time
 import ujson
+import re
 from aiohttp import web
 from aiohttp.web import Response as HttpResponse
 from aiohttp.web_ws import WebSocketResponse
@@ -86,7 +87,7 @@ class WebServer(BaseServer):
             dicts = dict()
             for p in _:
                 if '=' in p:
-                    k,v = p.split('=')
+                    k,v = re.split(r"=", p, maxsplit=1)
                     dicts[k.strip()]=v.strip()
             state,result,error = await rm.execute(args=tuple(),dicts=dicts)
             execute_res['state'] = state.value

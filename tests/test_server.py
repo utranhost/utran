@@ -27,4 +27,12 @@ async def add2(d:dict):
 async def add3(l:list):
     return l[0]+l[1]
 
+id = 0
+@server.register.get
+async def pub(topic:str,msg:str):
+    global id
+    id+=1
+    await server.publish(id,topic,msg)
+
+
 utran.run(server)

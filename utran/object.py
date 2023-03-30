@@ -20,8 +20,8 @@ class UtRequestType(Enum):
 
 class UtState(Enum):
     """状态"""
-    FAILED:str = 'failed'
-    SUCCESS:str = 'success'
+    FAILED:int = 0
+    SUCCESS:int = 1
 
 class UtBaseRequest:
     """基础请求体"""
@@ -33,7 +33,14 @@ class UtBaseRequest:
 
 
 class RpcRequest(UtBaseRequest):
-    """Rpc请求体"""
+    """# Rpc请求体
+    Attributes:
+        id (int): 请求体id
+        requestType (str): 标记请求类型
+        methodName (str): 调用的方法或函数名
+        args (str): 列表参数
+        dicts (dict): 字典参数
+    """
     __slots__ = ('methodName','args','dicts')
 
     def __init__(self,
@@ -49,7 +56,13 @@ class RpcRequest(UtBaseRequest):
         
 
 class PubRequest(UtBaseRequest):
-    """Publish请求体"""
+    """# Publish请求体
+    Attributes:
+        id (int): 请求体id
+        requestType (str): 标记请求类型
+        topic (str): 话题
+        msg (any): 话题消息
+    """
 
     __slots__ = ('topic','msg')
     def __init__(self, id: int, topic: str,msg: any) -> None:
@@ -58,15 +71,24 @@ class PubRequest(UtBaseRequest):
         self.msg = msg
 
 class SubRequest(UtBaseRequest):
-    """Subscribe请求体"""
-    
+    """# Subscribe请求体
+    Attributes:
+        id (int): 请求体id
+        requestType (str): 标记请求类型
+        topics (List[str]): 可以同时订阅一个或多个话题
+    """    
     __slots__ = ('topics',)
     def __init__(self, id: int, topics:List[str]) -> None:
         super().__init__(id, UtRequestType.SUBSCRIBE) 
         self.topics = topics
 
 class UnSubRequest(UtBaseRequest):
-    """Unsubscribe请求体"""
+    """# Unsubscribe请求体
+    Attributes:
+        id (int): 请求体id
+        requestType (str): 标记请求类型
+        topics (List[str]): 可以同时取消订阅一个或多个话题
+    """
 
     __slots__ = ('topics',)
     def __init__(self, id: int, topics:List[str]) -> None:
@@ -76,7 +98,15 @@ class UnSubRequest(UtBaseRequest):
 
 
 class UtResponse:
-    """响应体"""
+    """# 响应体
+    Arags:
+        id (int): 请求体id
+        requestType (str): 标记请求类型
+        state (int): 0是失败，1是成功 
+        methodName (Union[str,None]): 本次被请求的方法或函数，订阅和取消订阅时此参数为None
+        result (any): 执行的结果
+        error (str): 存放错误异常信息，默认为''空字符串
+    """
 
     __slots__ = ('id','responseType','state','methodName','result','error')
     def __init__(self,
@@ -94,6 +124,7 @@ class UtResponse:
         self.error = error
 
     def to_dict(self):
+        """转为字典"""
         return dict(
             id=self.id,
             responseType = self.responseType.value,

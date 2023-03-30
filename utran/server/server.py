@@ -2,6 +2,7 @@ import asyncio
 from typing import Union
 
 from utran.handler import process_publish_request
+from utran.object import PubRequest
 from utran.register import Register
 from utran.server.webserver import WebServer
 from utran.server.rpcServer import RpcServer
@@ -117,14 +118,15 @@ class Server:
         return self._register
 
 
-    async def publish(self,topic:str,msg:dict)->None:
+    async def publish(self,id:int,topic:str,msg:any)->None:
         """
         # 给指定topic推送消息
         Args:
+            id (int): id标识
             topic (str): 指定话题
             msg (dict): 消息
-        """
-        await process_publish_request(dict(topic=topic,msg=msg),self._sub_container)
+        """        
+        await process_publish_request(PubRequest(id,topic,msg),self._sub_container)
 
 
 def run(server:Union[Server,RpcServer,WebServer]):
