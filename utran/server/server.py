@@ -21,6 +21,24 @@ class Server:
         dataMaxsize (int):  支持最大数据字节数
         limitHeartbeatInterval (int): 心跳检测的极限值，为了防止心跳攻击，默认为1s,两次心跳的间隔小于该值则会断开连接。
     """
+    __slots__=(
+        '_host',
+        '_web_port',
+        '_rpc_port',
+        '_is_run_webserver',
+        '_is_run_rpcserver',
+        '_checkParams',
+        '_checkReturn',
+        '_register',
+        '_sub_container',
+        '_severName',
+        '_dataMaxsize',
+        '_dataEncrypt',
+        '_limitHeartbeatInterval',
+        '_webServer',
+        '_rpcServer',
+        '__isruning')
+    
     def __init__(
             self,            
             *,

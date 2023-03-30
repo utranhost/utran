@@ -60,7 +60,6 @@ def cheekType(params:tuple,annotations:dict,args:tuple,dicts:dict={})->tuple:
     return tuple(args),dicts
 
 
-@dataclass
 class RMethod:
     """
     #存放注册方法的数据类
@@ -80,19 +79,36 @@ class RMethod:
         returnType (str): 返回值的类型
         asyncfunc (bool): 是否为异步函数或方法
     """
-    name:str
-    methodType:str
-    callable:callable
-    checkParams:bool
-    checkReturn:bool
   
-    def __post_init__(self) -> None:
-        """"""
-        self.cls: str = ''
-        if inspect.ismethod(self.callable):
-            self.cls = self.callable.__self__.__class__.__name__
+    __slots__ = ('name',
+                 'methodType',
+                 'callable',
+                 'checkParams',
+                 'checkReturn',
+                 'cls',
+                 'doc',
+                 'params',
+                 'default_values',
+                 'annotations',
+                 'varargs',
+                 'varkw',
+                 'returnType',
+                 'asyncfunc')
 
-        self.params:tuple = tuple(inspect.signature(self.callable).parameters.keys())
+    def __init__(self,
+                 name:str,
+                 methodType:str,
+                 callable:callable,
+                 checkParams:bool,
+                 checkReturn:bool) -> None:
+        """"""
+        self.name = name
+        self.methodType = methodType
+        self.callable = callable
+        self.checkParams = checkParams
+        self.checkReturn = checkReturn        
+        self.cls: str = '' if not inspect.ismethod(self.callable) else self.callable.__self__.__class__.__name__
+        self.params:tuple = tuple(inspect.signature(self.callable).parameters.keys())        
         self.default_values:tuple= tuple([i.default for i in tuple(inspect.signature(self.callable).parameters.values()) if i.default is not inspect._empty])
         self.doc:str = inspect.getdoc(self.callable)
         annotations = dict([(k,v.annotation) for k,v in  inspect.signature(self.callable).parameters.items() if v.annotation is not inspect._empty])
@@ -153,6 +169,8 @@ class Register:
 
     注:只有注册函数或方法指定了类型时以上参数才会起作用
     """
+    __slots__ = ('__rpc_methods','__get_methods','__post_methods','__checkParams','__checkReturn')
+
     def __init__(self,checkParams:bool=True,checkReturn:bool=True) -> None:
         self.__rpc_methods = dict()     # {method_name:{callable:callable,}}
         self.__get_methods = dict()     # {path:{callable:callable,info:{}}}

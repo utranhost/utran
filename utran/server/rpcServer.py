@@ -13,7 +13,7 @@ from utran.utils import ClientConnection, SubscriptionContainer, unpack_data
 
 class RpcServer(BaseServer):
     """服务端支持 rpc、sub/pub"""
-
+    __slots__=tuple()
     def __init__(
             self,
             host: str,

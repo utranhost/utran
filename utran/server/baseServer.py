@@ -19,7 +19,7 @@ class BaseServer(ABC):
 
     备注: 心跳需要客户端主动发起PING，服务端会被动响应PONG
     """
-
+    __slots__=('_host','_port','_register','_sub_container','_severName','_dataMaxsize','_dataEncrypt','_limitHeartbeatInterval','_server')
     def __init__(
             self,
             host: str,

@@ -114,7 +114,8 @@ def pack_data(res:UtResponse,encrypt=False)->bytes:
 
 
 class ClientConnection:
-
+    """客户端连接"""
+    __slots__=('topics','sender','__id','_encrypt')
     def __init__(self,sender:Union[StreamWriter,WebSocketResponse],encrypt:bool=False):
         self.topics = []
         self.__id = str(uuid.uuid4())
@@ -162,8 +163,11 @@ class SubscriptionContainer:
     # 存放订阅者和订阅话题的容器
         
     """
-    __subscribes = dict()   # {客户端id1:{writer:writer,topics:[话题1,话题2,...]},客户端id2:{writer:writer,topics:[话题1,...]}}
-    __topics = dict()       # {话题1:[客户端id1,客户端id2,..],话题2:[客户端id1,..]}        
+    __slots__=('__subscribes','__topics') 
+
+    def __init__(self) -> None:
+        self.__subscribes = dict()   # {客户端id1:{writer:writer,topics:[话题1,话题2,...]},客户端id2:{writer:writer,topics:[话题1,...]}}
+        self.__topics = dict()       # {话题1:[客户端id1,客户端id2,..],话题2:[客户端id1,..]}     
 
     def has_sub(self,subId:str):
         if subId in self.__subscribes:

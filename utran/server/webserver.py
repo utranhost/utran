@@ -16,6 +16,7 @@ from utran.server.baseServer import BaseServer
 
 
 class WebServer(BaseServer):
+    __slots__=tuple()
     def __init__(
             self,
             host: str,

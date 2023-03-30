@@ -1,5 +1,5 @@
 from enum import Enum
-from dataclasses import dataclass, field
+from dataclasses import field
 from collections import defaultdict
 from typing import List, Union
 
@@ -23,63 +23,86 @@ class UtState(Enum):
     FAILED:str = 'failed'
     SUCCESS:str = 'success'
 
-@dataclass
 class UtBaseRequest:
     """基础请求体"""
-    id:int
-    
-    def to_dict(self):
-        d = self.__dict__
-        if d.get('requestType'):
-            d['requestType'] = d['requestType'].value
-        return 
+    __slots__ = ('id','requestType')
 
-@dataclass
+    def __init__(self,id:int,requestType:UtRequestType) -> None:
+        self.id = id
+        self.requestType:UtRequestType = requestType
+
+
 class RpcRequest(UtBaseRequest):
     """Rpc请求体"""
-    methodName: str
-    args: Union[tuple, list] = field(default_factory=tuple)
-    dicts: dict = field(default_factory=lambda: defaultdict(list))
-    requestType: UtRequestType = UtRequestType.RPC
+    __slots__ = ('methodName','args','dicts')
 
-@dataclass
+    def __init__(self,
+                 id:int,
+                 methodName: str,
+                 args: Union[tuple, list]=field(default_factory=tuple),
+                 dicts: dict=field(default_factory=lambda: defaultdict(list))) -> None:
+        super().__init__(id, UtRequestType.RPC)
+
+        self.methodName= methodName
+        self.args = args
+        self.dicts = dicts
+        
+
 class PubRequest(UtBaseRequest):
     """Publish请求体"""
-    topic: str
-    msg: any
-    requestType:UtRequestType= UtRequestType.PUBLISH
 
-@dataclass
+    __slots__ = ('topic','msg')
+    def __init__(self, id: int, topic: str,msg: any) -> None:
+        super().__init__(id, UtRequestType.PUBLISH) 
+        self.topic = topic
+        self.msg = msg
+
 class SubRequest(UtBaseRequest):
     """Subscribe请求体"""
-    topics:List[str]
-    requestType:UtRequestType= UtRequestType.SUBSCRIBE
+    
+    __slots__ = ('topics',)
+    def __init__(self, id: int, topics:List[str]) -> None:
+        super().__init__(id, UtRequestType.SUBSCRIBE) 
+        self.topics = topics
 
-@dataclass
 class UnSubRequest(UtBaseRequest):
     """Unsubscribe请求体"""
-    topics:List[str]
-    requestType: UtRequestType = UtRequestType.UNSUBSCRIBE
+
+    __slots__ = ('topics',)
+    def __init__(self, id: int, topics:List[str]) -> None:
+        super().__init__(id, UtRequestType.UNSUBSCRIBE) 
+        self.topics = topics
 
 
-@dataclass
+
 class UtResponse:
     """响应体"""
-    id:int                              #本次请求的id
-    responseType:UtRequestType
-    state:UtState
-    methodName: Union[str,None] = None
-    result:any = None                   #执行结果
-    error:str = ''                      # 失败信息，执行失败时才会有内容
-    
+
+    __slots__ = ('id','responseType','state','methodName','result','error')
+    def __init__(self,
+                 id:int,
+                 responseType:UtRequestType,
+                 state:UtState,
+                 methodName: Union[str,None] = None,
+                 result:any = None,
+                 error:str = '') -> None:
+        self.id = id
+        self.responseType = responseType
+        self.state = state
+        self.methodName = methodName
+        self.result = result
+        self.error = error
+
     def to_dict(self):
-        d = self.__dict__
-        d['responseType'] = d['responseType'].value
-        d['state'] = d['state'].value
-        return d
+        return dict(
+            id=self.id,
+            responseType = self.responseType.value,
+            state = self.state.value,
+            methodName = self.methodName,
+            result = self.result,
+            error = self.error)
 
 
-@dataclass
 class BaseDataModel:
     """基础数据模型"""
     pass
