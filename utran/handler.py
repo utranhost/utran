@@ -2,7 +2,7 @@
 
 
 import asyncio
-from utran.object import PubRequest, RpcRequest, SubRequest, UnSubRequest, UtRequestType, UtResponse, UtState
+from utran.object import PubRequest, RpcRequest, SubRequest, UnSubRequest, UtType, UtResponse, UtState
 from utran.register import RMethod, Register
 from utran.utils import ClientConnection, SubscriptionContainer
 
@@ -21,24 +21,24 @@ async def process_request(request:dict,connection:ClientConnection,register:Regi
     requestType = request.get('requestType')
     id = request.get("id")
     
-    if UtRequestType.RPC.value==requestType:
+    if UtType.RPC.value==requestType:
         #  Rpc请求
         methodName = request.get("methodName")
         args = request.get("args") or tuple()
         dicts = request.get("dicts") or dict()
         return await process_rpc_request(RpcRequest(id=id,methodName=methodName,args=args,dicts=dicts),connection,register)
 
-    elif UtRequestType.UNSUBSCRIBE.value==requestType:
+    elif UtType.UNSUBSCRIBE.value==requestType:
         # 取消订阅 topic        
         topics = request.get("topics")
         return await process_unsubscribe_request(UnSubRequest(id=id,topics=topics),connection,sub_container)
 
-    elif UtRequestType.SUBSCRIBE.value==requestType:
+    elif UtType.SUBSCRIBE.value==requestType:
         # 订阅 topic
         topics = request.get("topics")
         return await process_subscribe_request(SubRequest(id=id,topics=topics),connection,sub_container)
 
-    elif UtRequestType.PUBLISH.value==requestType:
+    elif UtType.PUBLISH.value==requestType:
         topic = request.get("topic")
         msg = request.get("msg")
         return await process_publish_request(PubRequest(id=id,topic=topic,msg=msg),sub_container)
@@ -117,7 +117,7 @@ async def process_subscribe_request(request:SubRequest,connection:ClientConnecti
 
     topics:list = request.topics    
     response = UtResponse(id=request.id,
-                        responseType=UtRequestType.SUBSCRIBE,
+                        responseType=UtType.SUBSCRIBE,
                         state=UtState.SUCCESS)
 
     if not topics:

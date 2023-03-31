@@ -1,20 +1,32 @@
 from asyncio import StreamWriter
+import re
 import uuid
 
 import ujson
 from typing import List, Union
 
 from aiohttp.web_ws import WebSocketResponse
-from utran.object import UtResponse
+from utran.object import UtResponse, UtType
 
 
-def unpack_data(data:bytes, buffer:bytes=b'',maxsize:int=102400)->tuple[Union[bytes,None],Union[bytes,None],bytes]:
+def unpack_data2_utran(data:bytes, buffer:bytes=b'',maxsize:int=102400)->tuple[Union[bytes,None],Union[bytes,None],bytes]:
     """
-    从接收到的字节流中解析出完整的消息
-    :param data: 接收到的字节流
-    :param buffer: 缓冲区中未处理完的数据
-    :param maxsize: 支持数据的最大长度
-    :return: 如果解析成功完整消息，则返回请求类型的名称，消息和剩余字节流；否则返回None和原始字节流
+    根据utran协议从接收到的字节流中解析出完整的消息
+    Args:
+        data: 接收到的字节流
+        buffer: 缓冲区中未处理完的数据
+        maxsize: 支持数据的最大长度
+
+    Returns: 
+        如果解析成功完整消息，则返回请求类型的名称，消息和剩余字节流；否则返回None和原始字节流
+
+    Utran协议:
+        ```
+        rpc/subscribe/unsubscribe/publish
+        length:xx
+        encrypt:0/1
+        message_json
+        ```
     """
     buffer += data
     
@@ -84,17 +96,26 @@ def unpack_data(data:bytes, buffer:bytes=b'',maxsize:int=102400)->tuple[Union[by
     return name, message_data, remaining_data
     
 
-def pack_data(res:UtResponse,encrypt=False)->bytes:
+def pack_data2_utran(name:str,message:dict,encrypt:bool=False)->bytes:
     """
-    将要发送的消息打包成二进制格式
-    :param name: 请求类型的名称
-    :param message: 要发送的消息（dict类型）
-    :param encrypt: 是否加密数据
-    :return: 打包后的二进制数据
-    """
-    name:str = res.responseType.value
-    message:dict = res.to_dict()
+    根据utran协议将要发送的消息打包成二进制格式
 
+    Utran协议:
+        ```
+        rpc/subscribe/unsubscribe/publish
+        length:xx
+        encrypt:0/1
+        message_json
+        ```
+
+    Args:
+        name: 请求类型的名称
+        message: 要发送的消息（dict类型）
+        encrypt: 是否加密数据
+
+    Returns:
+        打包后的二进制数据
+    """
     message_json = ujson.dumps(message).encode('utf-8')
     
     if encrypt:
@@ -128,7 +149,7 @@ class ClientConnection:
 
     async def send(self,response:UtResponse):
         if isinstance(self.sender,StreamWriter):
-            msg = pack_data(response,self._encrypt)
+            msg = pack_data2_utran(response.responseType.value,response.to_dict(),self._encrypt)
             await self.__send_by_sw(msg)
         elif isinstance(self.sender,WebSocketResponse):
             await self.__send_by_ws(response.to_dict())
@@ -269,3 +290,32 @@ class SubscriptionContainer:
         return all_subId
 
 
+def parse_utran_uri(uri:str)->tuple[str, int]:
+    """#解析uri
+    Returns:
+        返回host和port
+    """
+    result = re.search(r"//([^:/]+):(\d+)", uri)
+    if result:
+        host = result.group(1)
+        port = result.group(2)
+        return host, port
+    else:
+        raise ValueError(f'Uri error:{uri}')
+    
+
+
+
+
+REQUEST_ID:int=0
+def gen_utran_request(requestType:UtType,encrypt:bool,**msg)->tuple[int,bytes]:
+    """生成符合utran协议的请求数据
+    
+    Returns:
+        返回 本次的请求id 和 pack后的请求数据
+    """
+    global REQUEST_ID    
+    REQUEST_ID += 1
+    msg['id'] = REQUEST_ID
+    msg['requestType'] = requestType.value
+    return REQUEST_ID,pack_data2_utran(requestType.value,msg,encrypt)

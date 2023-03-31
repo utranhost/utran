@@ -3,41 +3,20 @@ import json
 import socket
 import zlib
 
-from utils import (pack_data,
-                   unpack_data)
+from utils import (pack_data2_utran,
+                   unpack_data2_utran)
+from utran.client.que import ResultQueue
+
 
 REQUEST_ID:int=0
-
-
-
-
 def gen_request(requestType,method_name,args,dicts)->dict:
     global REQUEST_ID
     """生成请求"""
     REQUEST_ID += 1    
-    return pack_data(requestType,{requestType:'2.0', 'id': REQUEST_ID, 'method':method_name, 'args':args, 'dicts':dicts})
+    return pack_data2_utran(requestType,{requestType:'2.0', 'id': REQUEST_ID, 'method':method_name, 'args':args, 'dicts':dicts})
 
 
-class ResultQueue:
-    _resluts = dict() # {id:res,id2:res}
 
-    def push(self,response:dict):
-        """推入数据"""
-        id = response.get('id')
-        if id:
-            self._resluts[id] = response
-            return True
-        else:
-            return False
-        
-
-    def pull(self,id:int):
-        """拉取数据，并删除""" 
-        if id in self._resluts:
-            return self._resluts.pop(id)
-        else:
-            # asyncio.sleep(0)
-            return
 
 
 class SyncClient:
@@ -63,14 +42,14 @@ class SyncClient:
     def call(self,method_name,*args,**dicts):
         """远程调用"""
         request:dict = self.gen_request(method_name,args,dicts)
-        request_packet = pack_data('jsonrpc',request)
+        request_packet = pack_data2_utran('jsonrpc',request)
         self.__socket.sendall(request_packet)
         try:
             while True:
                 chunk = self.__socket.recv(1024)
                 if not chunk:
                     raise ConnectionError('Connection closed by server')
-                name,message, self._buffer = unpack_data(chunk, self._buffer)
+                name,message, self._buffer = unpack_data2_utran(chunk, self._buffer)
                 
                 if message is not None:
                     response:dict = json.loads(message.decode('utf-8').strip())
@@ -166,14 +145,14 @@ class Rpc:
 
     def call(self,method_name,*args,**dicts):
         request:dict = self.gen_request(method_name,args,dicts)
-        request_packet = pack_data('jsonrpc',request)
+        request_packet = pack_data2_utran('jsonrpc',request)
         self.__socket.sendall(request_packet)
         try:
             while True:
                 chunk = self.__socket.recv(1024)
                 if not chunk:
                     raise ConnectionError('Connection closed by server')
-                name,message, self._buffer = unpack_data(chunk, self._buffer)
+                name,message, self._buffer = unpack_data2_utran(chunk, self._buffer)
                 
                 if message is not None:
                     response:dict = json.loads(message.decode('utf-8').strip())

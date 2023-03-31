@@ -12,7 +12,7 @@ from utran.utils import SubscriptionContainer
 
 
 class Server:
-    """服务端支持 jsonrpc、GET、POST、sub/pub
+    """包含了web服务和Rpc服务端，支持 RPC、GET、POST、SUB/PUB
     Args:
         host (str): 主机地址
         port (int): 端口号

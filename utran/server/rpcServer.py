@@ -8,7 +8,7 @@ from utran.handler import process_publish_request, process_request
 from utran.object import HeartBeat
 from utran.register import Register
 from utran.server.baseServer import BaseServer
-from utran.utils import ClientConnection, SubscriptionContainer, unpack_data
+from utran.utils import ClientConnection, SubscriptionContainer, unpack_data2_utran
 
 
 class RpcServer(BaseServer):
@@ -82,7 +82,7 @@ class RpcServer(BaseServer):
                 continue
 
             try:
-                requestName, request, buffer = unpack_data(
+                requestName, request, buffer = unpack_data2_utran(
                     data, buffer, self._dataMaxsize)
                 if request is None:
                     continue

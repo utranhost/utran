@@ -1,0 +1,54 @@
+#项目标题
+site_name: Utran's Docs
+dev_addr: '127.0.0.1:6789'
+
+#主题
+theme:
+  name: material # Adiciona o tema bonitinho    pip install mkdocs mkdocs-material
+  icon:
+    admonition:
+      note: octicons/tag-16
+      abstract: octicons/checklist-16
+      info: octicons/info-16
+      tip: octicons/squirrel-16
+      success: octicons/check-16
+      question: octicons/question-16
+      warning: octicons/alert-16
+      failure: octicons/x-circle-16
+      danger: octicons/zap-16
+      bug: octicons/bug-16
+      example: octicons/beaker-16
+      quote: octicons/quote-16
+
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - admonition
+  - pymdownx.details
+
+
+#插件
+plugins: 
+- search      # Plugin que possibilita buscas pela documentação
+- mkdocstrings
+
+
+# 监控指定文件夹
+watch: # Live-reload para os mais íntimos - mais informações abaixo também
+  - utran
+
+#导航栏
+nav:
+  - 介绍: index.md
+  - 模块:
+    - server: api/server.md
+    - client: api/client.md
+    - application: api/application.md
+    - object: api/object.md
+    - register: api/register.md
+    - utils: api/utils.md
+    - handler: api/handler.md

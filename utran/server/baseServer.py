@@ -6,9 +6,8 @@ from utran.utils import SubscriptionContainer
 
 
 class BaseServer(ABC):
-    """
-    # 服务器基类
-        Args:
+    """# 服务器基类
+    Args:
         host (str): 主机地址
         port (int): 端口号
         register (Register): 注册类，用于注册本地的可调用函数
