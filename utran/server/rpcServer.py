@@ -2,13 +2,15 @@
 
 import asyncio
 import time
+from typing import Union
 import ujson
 from utran.handler import process_publish_request, process_request
 
-from utran.object import HeartBeat
+from utran.object import HeartBeat, UtRequest, create_UtRequest
 from utran.register import Register
 from utran.server.baseServer import BaseServer
-from utran.utils import ClientConnection, SubscriptionContainer, unpack_data2_utran
+from utran.object import ClientConnection, SubscriptionContainer
+from utran.utils import unpack_data2_utran
 
 
 class RpcServer(BaseServer):
@@ -66,7 +68,7 @@ class RpcServer(BaseServer):
         t = float('-inf')
         while True:
             data = await reader.read(1024)
-            # print(data)
+            print("id:",connection.id)
             if not data:
                 # 收到空消息时，退出，同时清理订阅
                 break
@@ -86,19 +88,21 @@ class RpcServer(BaseServer):
                     data, buffer, self._dataMaxsize)
                 if request is None:
                     continue
-
+                
                 request: str = request.decode('utf-8')
-                res: dict = ujson.loads(request)
-                if type(res) != dict:
-                    raise ValueError('rpc请求数据必须是dict类型')
+                requestName:str = requestName.decode('utf-8')
+                res: Union[dict,list] = ujson.loads(request)
+                print('收到请求：',res)
+
             except Exception as e:
                 # logging.log(str(e))
                 break
 
             # 处理请求
-            if await process_request(res, connection, self._register, self._sub_container):
+            if await process_request(create_UtRequest(res,res.get('id'),res.get('encrypt')), connection, self._register, self._sub_container):
                 break
 
+            print("回复数据",res.get("id"))
         self._sub_container.del_sub(connection.id)
         try:
             writer.write(b'')

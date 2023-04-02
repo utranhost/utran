@@ -1,6 +1,5 @@
 
 import inspect
-from dataclasses import dataclass
 from functools import partial
 
 from utran.object import BaseDataModel, UtState
@@ -262,7 +261,7 @@ class Register:
             
         if inspect.isfunction(_f_) or inspect.ismethod(_f_):
             if not _n_:
-                _n_ = _f_.__name__            
+                _n_ = _f_.__name__
             self._update(_t_,_f_,_n_)
         elif inspect.ismodule(_f_):
             raise ValueError(f"'{_f_.__name__} 'module could not be registered!")

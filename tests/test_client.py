@@ -1,3 +1,4 @@
+import asyncio
 import os
 os.sys.path.append(os.path.abspath('./'))
 os.sys.path.append(os.path.abspath('../'))
@@ -9,11 +10,21 @@ from utran.client.baseclient import Client,run
 client = Client()
 
 async def main():
-    res:UtResponse = await client.call('add',a=1,b=2)
-    print(res.to_dict())
+    res:UtResponse = await client.rpccall('add',dicts=dict(a=0,b=1))
+    print(res)
 
-    res:UtResponse = await client.call('add',a=7,b=2)
-    print(res.to_dict())
+    res:UtResponse = await client.rpccall('add',dicts=dict(a=0,b=2))
+    print(res)
 
+
+    res:list[UtResponse] = await client.multicall(client.rpccall('add',args=[0,2],multicall=True),
+                                                  client.rpccall('add',dicts=dict(a=1,b=2),multicall=True),
+                                                  client.rpccall('add',dicts=dict(a=2,b=2),multicall=True),
+                                                  client.rpccall('add',dicts=dict(a=3,b=2),multicall=True),
+                                                  client.rpccall('add',dicts=dict(a=4,b=2),multicall=True),
+                                                  client.rpccall('ad3d',dicts=dict(a=5,b=2),multicall=True),
+                                                  client.rpccall('add',dicts=dict(a=6,b=2),multicall=True)
+                                                  )
+    print(res)
 
 run(client.run('utran://127.0.0.1:8081',main()))

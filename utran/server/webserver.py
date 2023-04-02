@@ -8,10 +8,10 @@ from aiohttp.web import Response as HttpResponse
 from aiohttp.web_ws import WebSocketResponse
 from aiohttp import WSMsgType,web_request
 from utran.handler import process_request
-from utran.object import HeartBeat, UtState
+from utran.object import HeartBeat, UtRequest, UtState, create_UtRequest
 
 from utran.register import RMethod, Register
-from utran.utils import ClientConnection, SubscriptionContainer
+from utran.object import ClientConnection, SubscriptionContainer
 from utran.server.baseServer import BaseServer
 
 
@@ -127,7 +127,7 @@ class WebServer(BaseServer):
                         if type(res)!=dict:break
 
                         # 处理请求
-                        if await process_request(res,connection,self._register,self._sub_container):
+                        if await process_request(create_UtRequest(res,res.get('id'),res.get('encrypt')),connection,self._register,self._sub_container):
                             break
                         continue
                 except:

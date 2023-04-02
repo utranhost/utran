@@ -1,7 +1,8 @@
+
 import os
 os.sys.path.append(os.path.abspath('./'))
 
-
+import asyncio
 import utran
 from utran.server import Server,HttpResponse
 
@@ -16,6 +17,7 @@ async def home(name='wolrd'):
 @server.register.post
 @server.register.get()
 async def add(a:int,b:int):
+    await asyncio.sleep(1)
     return a+b
 
 @server.register.rpc

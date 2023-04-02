@@ -2,7 +2,7 @@
 from abc import ABC, abstractmethod
 
 from utran.register import Register
-from utran.utils import SubscriptionContainer
+from utran.object import SubscriptionContainer
 
 
 class BaseServer(ABC):
