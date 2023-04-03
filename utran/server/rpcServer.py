@@ -77,6 +77,7 @@ class RpcServer(BaseServer):
 
                 # 心跳检测
                 if data == HeartBeat.PING.value:
+                    print("PING")
                     if time.time() - t < self._limitHeartbeatInterval:
                         logger.debug(f'两次心跳得时间间隔小于{self._limitHeartbeatInterval}s，强制断开连接。')
                         break   # 当两次心跳得时间间隔小于1s，强制断开连接。

@@ -1,3 +1,4 @@
+import asyncio
 import os
 os.sys.path.append(os.path.abspath('./'))
 os.sys.path.append(os.path.abspath('../'))
@@ -6,18 +7,25 @@ os.sys.path.append(os.path.abspath('../'))
 from utran.object import UtResponse
 from utran.client.baseclient import Client,run
 
-client = Client()
+client = Client(reconnectNum=3)
 
 def on_topic(msg):
     print(msg)
 
 async def main():
+
     res:UtResponse = await client.call('add',dicts=dict(a=0,b=1))
     print(res)
 
     res:UtResponse = await client.call('add',dicts=dict(a=0,b=2))
     print(res)
 
+    res = await asyncio.gather(client.call('add',dicts=dict(a=0,b=1),timeout=5),
+                   client.call('add',dicts=dict(a=0,b=1),timeout=5),
+                   client.call('add',dicts=dict(a=0,b=1),timeout=5),
+                   client.call('add',dicts=dict(a=0,b=1),timeout=5),
+                   client.call('add',dicts=dict(a=0,b=1),timeout=5))
+    print(res)
 
     res:list[UtResponse] = await client.multicall(client.call('add',args=[0,2],multicall=True),
                                                   client.call('add',dicts=dict(a=1,b=2),multicall=True),

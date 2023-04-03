@@ -1,8 +1,9 @@
 
 
 import asyncio
+from typing import List, Union
 from utran.object import UtRequest, UtResponse
-
+from utran.log import logger
 
 class ResultQueue:
     """服务器响应的结果队列"""
@@ -13,6 +14,17 @@ class ResultQueue:
         self._events = dict()  # {id1:e,id2:e}
         self._requests = dict()
         
+    def has_request_cache(self):
+        """缓存中是否还有未响应的请求"""
+        if self._requests:
+            return True
+        else:
+            return False
+    
+    def pop_cache_request(self,id:int)->UtRequest:
+        """获取缓存中的未响应的指定请求，并清除"""
+        return self._requests.pop(id)
+
 
     async def wait_response(self,request:UtRequest,timeout)->asyncio.Event:
         """缓存请求，并设置event等待"""
@@ -23,8 +35,8 @@ class ResultQueue:
         try:
             await asyncio.wait_for(event.wait(), timeout=timeout)
         except asyncio.TimeoutError:
-            raise TimeoutError('Request timed out') 
-        response:UtResponse = self.pop_responses(request.id)
+            raise TimeoutError(f'Request timed out:{request.to_dict()}') 
+        response:UtResponse = self._pop_responses(request.id)
         return response
 
         
@@ -35,7 +47,7 @@ class ResultQueue:
         event.set()
 
 
-    def pop_responses(self,id:int)->UtResponse:
+    def _pop_responses(self,id:int)->UtResponse:
         """拉取指定id的响应数据，同时清除该id的响应缓存和请求缓存""" 
         self._requests.pop(id)
         return self._responses.pop(id)
