@@ -1,6 +1,8 @@
 
 import os
 os.sys.path.append(os.path.abspath('./'))
+os.sys.path.append(os.path.abspath('../'))
+
 
 import asyncio
 import utran
@@ -35,7 +37,7 @@ id = 0
 async def pub(topic:str,msg:str):
     global id
     id+=1
-    await server.publish(id,topic,msg)
+    await server.publish(id,msg,topic)
 
 
 utran.run(server)

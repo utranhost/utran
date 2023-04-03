@@ -143,7 +143,7 @@ class RMethod:
                 res = self.callable(*args,**dicts)
             if self.checkReturn and self.returnType:
                 try:
-                    res= allowType(res,self.returnType,self.name)                    
+                    res= allowType(res,self.returnType,self.name)
                     result = res
                 except:
                     state = UtState.FAILED
@@ -265,7 +265,7 @@ class Register:
             self._update(_t_,_f_,_n_)
         elif inspect.ismodule(_f_):
             raise ValueError(f"'{_f_.__name__} 'module could not be registered!")
-        else:            
+        else:
             if not _n_:
                 raise ValueError(f"The name is required!")
             if type(_n_)!=str:

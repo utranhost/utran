@@ -1,42 +1,41 @@
 
 
 import asyncio
-from utran.object import UtResponse
+from utran.object import UtRequest, UtResponse
 
 
 class ResultQueue:
     """服务器响应的结果队列"""
     
-    __slots__ = ('_resluts','_events')
+    __slots__ = ('_responses','_events','_requests')
     def __init__(self) -> None:
-        self._resluts = dict()   # {id:res,id2:res}
+        self._responses = dict()   # {id:res,id2:res}
         self._events = dict()  # {id1:e,id2:e}
-    
-    def push_event(self,id:int,event:asyncio.Event):
-        """推入事件"""
-        self._events[id] = event
+        self._requests = dict()
         
 
-    def pull_event(self,id:int):
-        """拉取事件，并删除""" 
-        if id in self._resluts:
-            return self._events.pop(id)
-        else:
-            # asyncio.sleep(0)
-            return
+    async def wait_response(self,request:UtRequest,timeout)->asyncio.Event:
+        """缓存请求，并设置event等待"""
+        event = asyncio.Event()
+        self._events[request.id] = event
+        self._requests[request.id] = request
 
-    def push(self,response:UtResponse):
-        """推入数据"""
-        if response.id:
-            self._resluts[response.id] = response
-            return True
-        else:
-            return False
+        try:
+            await asyncio.wait_for(event.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            raise TimeoutError('Request timed out') 
+        response:UtResponse = self.pop_responses(request.id)
+        return response
+
         
-    def pull(self,id:int):
-        """拉取数据，并删除""" 
-        if id in self._resluts:
-            return self._resluts.pop(id)
-        else:
-            # asyncio.sleep(0)
-            return
+    def cache_response(self,response:UtResponse):
+        """缓存响应,并放行event等待"""
+        self._responses[response.id] = response
+        event:asyncio.Event = self._events.pop(response.id) 
+        event.set()
+
+
+    def pop_responses(self,id:int)->UtResponse:
+        """拉取指定id的响应数据，同时清除该id的响应缓存和请求缓存""" 
+        self._requests.pop(id)
+        return self._responses.pop(id)

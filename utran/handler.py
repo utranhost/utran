@@ -90,6 +90,7 @@ async def process_rpc_request(request:UtRequest,connection:ClientConnection,regi
         request (dict): 请求体
         connection (ClientConnection): 客户端连接
         register (Register): 存放订阅者的容器实例
+        to_send: 是否执行发送
 
     ## response 响应体格式↓
     Attributes:
@@ -137,9 +138,10 @@ async def process_subscribe_request(request:UtRequest,connection:ClientConnectio
     """
     # 处理subscribe订阅请求
     Args:
-        request (SubRequest): 请求体            
+        request (UtRequest): 请求体            
         connection (ClientConnection): 客户端连接
         sub_container (SubscriptionContainer): 存放订阅者的容器实例
+        to_send: 是否执行发送
 
     ## response 响应体格式↓
     Attributes:
@@ -184,9 +186,10 @@ async def process_unsubscribe_request(request:UtRequest,connection:ClientConnect
     """
     # 处理unsubscribe取消订阅请求
     Args:
-        uid (str): 主体的uid
-        request (dict): 请求体            
-        hoding (bool): 是否处于订阅状态中
+        request (UtRequest): 请求体            
+        connection (ClientConnection): 客户端连接
+        sub_container (SubscriptionContainer): 存放订阅者的容器实例
+        to_send: 是否执行发送
     
     ## response 响应体格式↓
     Attributes:
@@ -227,14 +230,17 @@ async def process_publish_request(request:UtRequest,sub_container:SubscriptionCo
     """
     # 处理publish发布请求
     Args:
-        uid (str): 主体的uid
-        request (dict): 请求体
+        request: 请求体
+        sub_container (SubscriptionContainer): 存放订阅者的容器实例
         
-    ## request 请求体格式↓
+    ## response 响应体格式↓
     Attributes:
-        publish (str): 用于声明请求的类型，版本号1.0
-        topic (str): topic名称
-        msg (dict): 发布的消息
+        id (int):  本次请求的id
+        responseType (str): 'publish'
+        state (int):  状态 0为失败，1为成功        
+        result (dict): 返回一个字典 {'topic':话题,'msg':话题消息}
+        error (str): 失败信息
+        methodName (str): None
 
     Returns:
         返回一个布尔值,是否结束连接
@@ -251,7 +257,7 @@ async def process_publish_request(request:UtRequest,sub_container:SubscriptionCo
         subIds:list = sub_container.get_subId_by_topic(topic)
         for subid in subIds:
             sub:ClientConnection = sub_container.get_sub_by_id(subid)
-            response.result = msg
+            response.result = dict(topic=topic,msg=msg)
             if sub:await sub.send(response)
         
     await asyncio.sleep(0)

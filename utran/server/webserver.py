@@ -13,6 +13,7 @@ from utran.object import HeartBeat, UtRequest, UtState, create_UtRequest
 from utran.register import RMethod, Register
 from utran.object import ClientConnection, SubscriptionContainer
 from utran.server.baseServer import BaseServer
+from utran.log import logger
 
 
 
@@ -47,7 +48,7 @@ class WebServer(BaseServer):
         await runner.setup()
         site = web.TCPSite(runner, self._host, self._port)
         await site.start()
-        print(f"{'='*6} {self._severName} on http://{site._host}:{site._port}/ {'='*6}")
+        logger.success(f"\n{'='*6} {self._severName} on http://{site._host}:{site._port}/ {'='*6}")
         loop = asyncio.get_event_loop()
         await asyncio.Future(loop=loop)
         

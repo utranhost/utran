@@ -119,7 +119,7 @@ class UtRequest:
                  methodName:str = None,
                  args: Union[tuple, list] = field(default_factory=tuple),
                  dicts: dict = field(default_factory=lambda: defaultdict(list)),
-                 topics: tuple[str] = tuple(),
+                 topics: Union[tuple[str],str] = tuple(),
                  msg:any = None,
                  multiple:list[dict] = [],
                  encrypt:bool = False,
@@ -367,7 +367,7 @@ class SubscriptionContainer:
             返回本次成功订阅的topic        
         """
         ok = []
-        if type(topic) is list:
+        if type(topic) in [list,tuple]:
             for t in topic:
                 t_ = self.add_topic(subId,t)
                 if t_: ok.append(t_)
@@ -391,7 +391,7 @@ class SubscriptionContainer:
             返回本次移除成功的topic
         """
         ok = []
-        if type(topic) is list:
+        if type(topic) in [list,tuple]:
             for t in topic:
                 t_ = self.remove_topic(subId,t)
                 if t_: 
