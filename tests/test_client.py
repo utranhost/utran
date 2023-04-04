@@ -5,10 +5,9 @@ os.sys.path.append(os.path.abspath('../'))
 
 
 import utran
-from utran.object import UtResponse
-from utran.client import Client
+from utran.client.baseclient import BaseClient
 
-client = Client(reconnectNum=3)
+client = BaseClient(reconnectNum=3)
 
 def on_topic(msg,topic):
     print(f"{topic}：",msg)
@@ -19,12 +18,12 @@ async def main():
     res = await client.subscribe('good',on_topic)
     print(res)
 
-    res:UtResponse = await client.call('add300',dicts=dict(a=0,b=1),ignore=True)
+    res = await client.call('add300',dicts=dict(a=0,b=1),ignore=True)
     print(res)
 
     # print(r)
 
-    res:UtResponse = await client.call('add',dicts=dict(a=0,b=2))
+    res = await client.call('add',dicts=dict(a=0,b=2))
     print(res)
 
     res = await asyncio.gather(client.call('add511',dicts=dict(a=0,b=1),timeout=5,ignore=True),
@@ -34,7 +33,7 @@ async def main():
                    client.call('add',dicts=dict(a=0,b=1),timeout=5))
     print(res)
 
-    res:list[UtResponse] = await client.multicall(client.call('add0',args=[0,2],multicall=True),
+    res:list = await client.multicall(client.call('add0',args=[0,2],multicall=True),
                                                   client.call('add',dicts=dict(a=1,b=2),multicall=True),
                                                   client.call('add',dicts=dict(a=2,b=2),multicall=True),
                                                   client.call('add',dicts=dict(a=3,b=2),multicall=True),

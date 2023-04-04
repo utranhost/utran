@@ -128,3 +128,11 @@ class Server:
         await process_publish_request(UtRequest(id,requestType=UtType.PUBLISH,topics=topics,msg=msg),self._sub_container)
 
 
+
+    def exit(self):
+        """退出程序"""
+        if not self._without_rpcserver:
+            self._rpcServer.exit()
+
+        if not self._without_webserver:
+            self._webServer.exit()

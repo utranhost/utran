@@ -45,9 +45,9 @@ watch: # Live-reload para os mais íntimos - mais informações abaixo também
 nav:
   - 介绍: index.md
   - 模块:
-    - server: api/server.md
-    - client: api/client.md
     - application: api/application.md
+    - server: api/server.md
+    - client: api/client.md    
     - object: api/object.md
     - register: api/register.md
     - utils: api/utils.md

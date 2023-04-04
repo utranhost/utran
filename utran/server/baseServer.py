@@ -1,5 +1,6 @@
 
 from abc import ABC, abstractmethod
+import asyncio
 
 from utran.register import Register
 from utran.object import SubscriptionContainer
@@ -18,7 +19,7 @@ class BaseServer(ABC):
 
     备注: 心跳需要客户端主动发起PING，服务端会被动响应PONG
     """
-    __slots__=('_host','_port','_register','_sub_container','_severName','_dataMaxsize','_dataEncrypt','_limitHeartbeatInterval','_server')
+    __slots__=('_host','_port','_register','_sub_container','_severName','_dataMaxsize','_dataEncrypt','_limitHeartbeatInterval','_server','_exitEvent')
     def __init__(
             self,
             *,
@@ -35,6 +36,7 @@ class BaseServer(ABC):
         self._dataMaxsize = dataMaxsize
         self._dataEncrypt = dataEncrypt
         self._limitHeartbeatInterval = limitHeartbeatInterval
+        self._exitEvent = asyncio.Event()
 
         self._server = None
 
@@ -44,7 +46,7 @@ class BaseServer(ABC):
         """启动服务器"""
         self._host = host
         self._port = port
-        pass
+        await self._exitEvent.wait()
 
     @property
     def register(self) -> Register:
@@ -53,3 +55,8 @@ class BaseServer(ABC):
             返回一个Register类的实例
         """
         return self._register
+
+
+    def exit(self):
+        """退出程序"""
+        self._exitEvent.set()

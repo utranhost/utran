@@ -1,15 +1,16 @@
 import asyncio
 from typing import Union
-from utran.utils import parse_utran_uri
 
 
+from utran.client.baseclient import BaseClient
 from utran.client.client import Client
 from utran.server.rpcServer import RpcServer
 from utran.server.server import Server
 from utran.server.webserver import WebServer
 
+from utran.utils import parse_utran_uri
 
-def run(app:Union[Server,RpcServer,WebServer,Client],host:str='127.0.0.1',port:int=8081,web_port:int=8080,uri:str=None):
+def run(app:Union[Server,RpcServer,WebServer,BaseClient,Client],host:str='127.0.0.1',port:int=8081,web_port:int=8080,uri:str=None):
     """# 通用的运行器
     Args:
         app: 需要运行的服务
@@ -30,5 +31,5 @@ def run(app:Union[Server,RpcServer,WebServer,Client],host:str='127.0.0.1',port:i
     
     if uri: 
         host,port = parse_utran_uri(uri)
-    if isinstance(app,Client):asyncio.run(app.start(host=host,
+    if isinstance(app,BaseClient):asyncio.run(app.start(host=host,
                                                     port=port))

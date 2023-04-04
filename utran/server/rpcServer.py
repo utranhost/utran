@@ -47,6 +47,7 @@ class RpcServer(BaseServer):
         self._port = port
         self._server = await asyncio.start_server(self.__handle_client, self._host, self._port)
         logger.success(f"\n{'='*6} {self._severName} started on {self._host}:{self._port} {'='*6}")
+        await self._exitEvent.wait()
 
 
     async def publish(self, topic: str, msg: dict) -> None:
