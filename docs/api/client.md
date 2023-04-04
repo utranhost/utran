@@ -10,7 +10,11 @@ client = Client()
 
 @client
 async def main():
-    res = await client.call(timeout=2).add(1,2)
+    
+    res = await client.call.add(1,2) # 无选项调用
+    print(res)
+
+    res = await client.call(timeout=1).add(1,2)  # 有选项调用
     print(res)
 
     res:list = await client.multicall(client.call(multicall=True).add(1,2),
