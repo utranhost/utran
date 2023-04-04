@@ -125,7 +125,7 @@ class BaseClient:
                  *,
                  heartbeatFreq:int=2,
                  serverTimeout:int=2,
-                 localTimeout:int=5,
+                 localTimeout:int=10,
                  reconnectNum:int=32,
                  ignore:bool = False,
                  encrypt: bool = False,
