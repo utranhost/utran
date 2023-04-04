@@ -52,17 +52,18 @@ async def process_multicall_request(request:UtRequest,connection:ClientConnectio
         r:UtRequest = create_UtRequest(_r)
         if UtType.RPC==r.requestType:
             #  Rpc请求
-            tasks.append(asyncio.create_task(process_rpc_request(r,connection,register,False)))
+            tasks.append(asyncio.create_task(process_rpc_request(r,connection,register,to_send=False)))
+
             continue
         
         elif UtType.UNSUBSCRIBE==r.requestType:
             # 取消订阅 topic  
-            tasks.append(asyncio.create_task(process_unsubscribe_request(r,connection,sub_container,False)))
+            tasks.append(asyncio.create_task(process_unsubscribe_request(r,connection,sub_container,to_send=False)))
             continue
 
         elif UtType.SUBSCRIBE==r.requestType:
             # 订阅 topic
-            tasks.append(asyncio.create_task(process_subscribe_request(r,connection,sub_container,False)))
+            tasks.append(asyncio.create_task(process_subscribe_request(r,connection,sub_container,to_send=False)))
             continue
 
         elif UtType.PUBLISH==r.requestType:
@@ -73,10 +74,12 @@ async def process_multicall_request(request:UtRequest,connection:ClientConnectio
     response = UtResponse(id=request.id,
                     state=UtState.SUCCESS,
                     responseType=request.requestType)
+    
     res = []
     for task in tasks:
         _response:UtResponse = await task
         res.append(_response.to_dict())
+
     response.result = res
     await connection.send(response)
     return False

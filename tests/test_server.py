@@ -23,6 +23,12 @@ async def add(a:int,b:int):
     return a+b
 
 @server.register.rpc
+async def add0(a:int,b:int):
+    await asyncio.sleep(3)
+    return a+b
+
+
+@server.register.rpc
 @server.register.get()
 async def add2(d:dict):
     return d['a']+d['b']

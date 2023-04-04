@@ -208,6 +208,12 @@ class UtResponse:
         methodName (Union[str,None]): 本次被请求的方法或函数，订阅和取消订阅时此参数为None
         result (any): 执行的结果
         error (str): 存放错误异常信息，默认为''空字符串
+
+    不同响应的result值:
+        |publish                     |subscribe                                              |unsubscribe|
+        |-|-|-|
+        |{'topic':话题,'msg':话题消息}|{'allTopics': ['话题1','话题2'], 'subTopics': ['话题2']}|{'allTopics': ['话题1'], 'unSubTopics': ['话题2']}|
+
     """
 
     __slots__ = ('id', 'responseType', 'state',
