@@ -273,7 +273,7 @@ class Client:
         msg = dict(requestType=UtType.UNSUBSCRIBE.value,topics=topic)
         request:UtRequest = create_UtRequest(msg)
         res = await self._send(request,timeout,ignore=ignore)
-        if not self._topics_handler:logger.info('已无任何订阅.')
+        if not self._topics_handler:logger.warning('已无任何订阅.')
         return res
         
 
