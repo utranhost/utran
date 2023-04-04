@@ -115,4 +115,4 @@ class RpcServer(BaseServer):
 
         except ConnectionResetError:
             self._sub_container.del_sub(connection.id)
-            logger.debug(f'客户端:{connection.id},连接已断开.')
+            logger.debug(f'客户端:{connection.id},连接丢失已断开.')
