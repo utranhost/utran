@@ -21,8 +21,6 @@ class WebServer(BaseServer):
     __slots__=tuple()
     def __init__(
             self,
-            host: str,
-            port: int,
             *,
             register: Register = None,
             sub_container: SubscriptionContainer = None,
@@ -32,8 +30,6 @@ class WebServer(BaseServer):
             dataEncrypt: bool = False) -> None:
         
         super().__init__(
-            host,
-            port,
             register=register, 
             sub_container=sub_container, 
             severName=severName, 
@@ -42,7 +38,9 @@ class WebServer(BaseServer):
             dataEncrypt=dataEncrypt)
 
 
-    async def start(self):
+    async def start(self,host: str,port: int,) -> None:
+        self._host = host
+        self._port = port
         server = web.Server(self.handle_request)
         runner = web.ServerRunner(server)
         await runner.setup()

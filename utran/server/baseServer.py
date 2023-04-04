@@ -21,8 +21,6 @@ class BaseServer(ABC):
     __slots__=('_host','_port','_register','_sub_container','_severName','_dataMaxsize','_dataEncrypt','_limitHeartbeatInterval','_server')
     def __init__(
             self,
-            host: str,
-            port: int,
             *,
             register: Register = None,
             sub_container: SubscriptionContainer = None,
@@ -31,8 +29,6 @@ class BaseServer(ABC):
             limitHeartbeatInterval: int = 1,
             dataEncrypt: bool = False) -> None:
 
-        self._host = host
-        self._port = port
         self._register = register or Register()
         self._sub_container = sub_container or SubscriptionContainer()
         self._severName = severName
@@ -44,8 +40,10 @@ class BaseServer(ABC):
 
 
     @abstractmethod
-    async def start(self) -> None:
+    async def start(self,host: str,port: int,) -> None:
         """启动服务器"""
+        self._host = host
+        self._port = port
         pass
 
     @property

@@ -17,10 +17,7 @@ from utran.utils import unpack_data2_utran
 class RpcServer(BaseServer):
     """服务端支持 rpc、sub/pub"""
     __slots__=tuple()
-    def __init__(
-            self,
-            host: str,
-            port: int,
+    def __init__(self,
             *,
             register: Register = None,
             sub_container: SubscriptionContainer = None,
@@ -30,8 +27,6 @@ class RpcServer(BaseServer):
             dataEncrypt: bool = False) -> None:
         
         super().__init__(
-            host,
-            port,
             register=register, 
             sub_container=sub_container, 
             severName=severName, 
@@ -40,7 +35,7 @@ class RpcServer(BaseServer):
             dataEncrypt=dataEncrypt)
 
 
-    async def start(self) -> None:
+    async def start(self,host: str,port: int,) -> None:
         """
         # 运行服务
         示例:
@@ -48,7 +43,8 @@ class RpcServer(BaseServer):
             ### asyncio.run(server.start())
         """
         if self._server != None: return
-
+        self._host = host
+        self._port = port
         self._server = await asyncio.start_server(self.__handle_client, self._host, self._port)
         logger.success(f"\n{'='*6} {self._severName} started on {self._host}:{self._port} {'='*6}")
 

@@ -1,6 +1,7 @@
 
 import asyncio
 from asyncio import Future
+from functools import partial
 import inspect
 import time
 
@@ -111,7 +112,8 @@ class Client:
                '_servePort',
                '_reconnectingEvent',
                '_lastReconectTime',
-               '_main_task')
+               '_main_task',
+               '_main')
     
     def __init__(self,
                  reslutqueue:ResultQueue=None,
@@ -139,18 +141,28 @@ class Client:
         self._reconnectingEvent.set()               # 默认关闭等待
         self._lastReconectTime:float = None                             # 最后一次重连时间
         self._main_task:asyncio.Task = None
+        self._main:callable = None
 
-    async def run(self,uri:str,main:Union[Future,Coroutine]):
+
+
+    async def start(self,main:Union[Future,Coroutine]=None,uri:str=None,host:str=None,port:int=None):
         """# 启动连接
         存在订阅的话题时，程序会一直等待话题的推送，无订阅话题时程序在执行完入口函数`main`后自动退出
         Args:
             uri: 服务器地址
             main:入口函数，这是一个协程对象或Future对象
         """
-        self._serveHost,self._servePort = parse_utran_uri(uri)
+        main = main or self._main
+        assert main,ValueError('No entry function or method was specified')
+        self._serveHost,self._servePort = [host,port]
+        if uri:
+            self._serveHost,self._servePort = parse_utran_uri(uri)
+        
+        assert self._serveHost and self._servePort,ValueError('Specify the correct host and port.')
+
         self._reader, self._writer = await asyncio.open_connection(self._serveHost, self._servePort)
         
-        self._main_task = asyncio.create_task(main)
+        self._main_task = asyncio.create_task(main())
         self._receive_task = asyncio.create_task(self.__receive())        
         
         self._heartbeatTimer = self._heartbeatTimer or HeartBeatTimer(self._ping,self._ping_timeout,self._heartbeatFreq,self._serverTimeout)
@@ -170,9 +182,18 @@ class Client:
         await self._close()
 
 
+    def __call__(self, *args: any, **opts: any) -> any:
+        """指定入口函数，可以使用装饰器方式指定入口函数"""
+        if len(args)==0:
+            return partial(self.__call__,**opts)
+        self._main = args[0]
+        return args[0]
+    
+
     async def _ping(self):
         """向服务器发送ping"""
         await self._send(None,heartbeat=True)
+
 
 
     async def _ping_timeout(self):
@@ -198,6 +219,7 @@ class Client:
                 self._receive_task = asyncio.create_task(self.__receive())
                 await asyncio.sleep(0.3)
                 # self._heartbeatTimer.alive()
+                [await self.subscribe(t,c) for t,c in self._topics_handler.items()]   # 订阅话题
                 await self._ping()
                 return True
                 # await asyncio.wait_for(self._ping(),timeout=1)
@@ -424,5 +446,5 @@ class Client:
         self._exitEvent.set()
 
 
-def run(main:Coroutine):
-    asyncio.run(main)
+def run(client:Client,uri:str):
+    asyncio.run(client.start(uri=uri))

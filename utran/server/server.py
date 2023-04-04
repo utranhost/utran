@@ -1,5 +1,4 @@
 import asyncio
-from typing import Union
 
 from utran.handler import process_publish_request
 from utran.object import UtRequest, UtType
@@ -26,8 +25,8 @@ class Server:
         '_host',
         '_web_port',
         '_rpc_port',
-        '_is_run_webserver',
-        '_is_run_rpcserver',
+        '_without_webserver',
+        '_without_rpcserver',
         '_checkParams',
         '_checkReturn',
         '_register',
@@ -41,13 +40,10 @@ class Server:
         '__isruning')
     
     def __init__(
-            self,            
+            self,
             *,
-            host: str = '127.0.0.1',
-            web_port:int=8080,
-            rpc_port: int=8081,
-            is_run_webserver:bool =True,
-            is_run_rpcserver:bool =True,
+            without_webserver:bool =False,
+            without_rpcserver:bool =False,
             checkParams:bool = True,
             checkReturn:bool = True,
             register: Register = None,
@@ -58,13 +54,10 @@ class Server:
             dataEncrypt: bool = False) -> None:
 
 
-        assert is_run_rpcserver or is_run_webserver,"There must be a service running."
+        assert not without_rpcserver or not without_webserver,"There must be a service running."
 
-        self._host = host
-        self._web_port= web_port
-        self._rpc_port = rpc_port
-        self._is_run_webserver = is_run_webserver
-        self._is_run_rpcserver = is_run_rpcserver
+        self._without_webserver = without_webserver
+        self._without_rpcserver = without_rpcserver
         self._checkParams = checkParams
         self._checkReturn = checkReturn
         self._register = register or Register(checkParams,checkReturn)
@@ -74,38 +67,44 @@ class Server:
         self._dataMaxsize = dataMaxsize        
         self._limitHeartbeatInterval = limitHeartbeatInterval
         self._dataEncrypt = dataEncrypt
-
-        self._webServer = WebServer(
-            host,
-            web_port,
-            register= self._register, 
-            sub_container= self._sub_container,
-            dataMaxsize= self._dataMaxsize, 
-            limitHeartbeatInterval= self._limitHeartbeatInterval, 
-            dataEncrypt= self._dataEncrypt) if is_run_webserver else None
-
-        self._rpcServer = RpcServer(
-            host,
-            rpc_port,
-            register= self._register, 
-            sub_container= self._sub_container,
-            dataMaxsize= self._dataMaxsize, 
-            limitHeartbeatInterval= self._limitHeartbeatInterval, 
-            dataEncrypt= self._dataEncrypt) if is_run_rpcserver else None
         
         self.__isruning=False
 
-    async def start(self)->None:
+
+    async def start(self,
+                    host: str = '127.0.0.1',
+                    web_port:int=8080,
+                    rpc_port: int=8081)->None:
         """
         # 运行服务
         示例:
             ### server = Server()
-            ### asyncio.run(server.run())
+            ### asyncio.run(server.start())
         """
+
         if self.__isruning: return
         else: self.__isruning = True
-        
-        t = [s.start() for s in [self._webServer,self._rpcServer] if s!=None]
+
+        self._host = host
+        self._web_port= web_port
+        self._rpc_port = rpc_port
+        self._webServer = WebServer(
+            register= self._register, 
+            sub_container= self._sub_container,
+            dataMaxsize= self._dataMaxsize, 
+            limitHeartbeatInterval= self._limitHeartbeatInterval, 
+            dataEncrypt= self._dataEncrypt) if not self._without_webserver else None
+
+        self._rpcServer = RpcServer(
+            register= self._register, 
+            sub_container= self._sub_container,
+            dataMaxsize= self._dataMaxsize, 
+            limitHeartbeatInterval= self._limitHeartbeatInterval, 
+            dataEncrypt= self._dataEncrypt) if not self._without_rpcserver else None
+                
+        t = []
+        if not self._without_rpcserver: t.append(self._rpcServer.start(host,rpc_port))
+        if not self._without_webserver: t.append(self._webServer.start(host,web_port))
         await asyncio.gather(*t)
 
 
@@ -128,8 +127,4 @@ class Server:
         """ 
         await process_publish_request(UtRequest(id,requestType=UtType.PUBLISH,topics=topics,msg=msg),self._sub_container)
 
-
-def run(server:Union[Server,RpcServer,WebServer]):
-    """启动服务"""
-    asyncio.run(server.start())
 

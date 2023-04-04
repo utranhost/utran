@@ -4,16 +4,18 @@ os.sys.path.append(os.path.abspath('./'))
 os.sys.path.append(os.path.abspath('../'))
 
 
+import utran
 from utran.object import UtResponse
-from utran.client import Client,run
+from utran.client import Client
 
 client = Client(reconnectNum=3)
 
 def on_topic(msg,topic):
     print(f"{topic}：",msg)
 
-async def main():
-    
+
+@client
+async def main():    
     res = await client.subscribe('good',on_topic)
     print(res)
 
@@ -49,5 +51,4 @@ async def main():
 
     # await client.exit()
 
-run(client.run('utran://127.0.0.1:8081',main()))
-
+utran.run(client,uri='utran://127.0.0.1:8081')
