@@ -90,11 +90,13 @@ class HeartBeatTimer:
 class BaseClient:
     """# 基础客户端
     Args:
-        reslutqueue: 结果队列类
-        encrypt: 是否加密传输
         heartbeatFreq: 心跳频率
         serverTimeout: 服务器响应超时时间，用于判断是否断线，超过此值会进行重连 (单位:秒)
+        localTimeout: 本地调用超时 (单位:秒)
         reconnectNum: 断线重连的次数
+        ignore: 是否忽略远程调用异常
+        encrypt: 是否加密传输
+        reslutqueue: 结果队列类
     """
     __slots__=('_reader',
                '_writer',
@@ -106,6 +108,7 @@ class BaseClient:
                '_exitEvent',
                '_heartbeatFreq',
                '_serverTimeout',
+               '_localTimeout',
                '_heartbeatTimer',
                '_receive_task',
                '_reconnectTask',
@@ -115,14 +118,18 @@ class BaseClient:
                '_reconnectingEvent',
                '_lastReconectTime',
                '_main_task',
-               '_main')
+               '_main',
+               '_ignore')
     
     def __init__(self,
-                 reslutqueue:ResultQueue=None,
-                 encrypt: bool = False,
+                 *,
                  heartbeatFreq:int=2,
                  serverTimeout:int=2,
-                 reconnectNum:int=32) -> None:
+                 localTimeout:int=5,
+                 reconnectNum:int=32,
+                 ignore:bool = False,
+                 encrypt: bool = False,
+                 reslutqueue:ResultQueue=None) -> None:
         self._reader = None
         self._writer = None
         self._reslutqueue:ResultQueue = reslutqueue or ResultQueue()
@@ -133,6 +140,7 @@ class BaseClient:
         self._exitEvent = asyncio.Event()                               # 用于等待退出
         self._heartbeatFreq:int = heartbeatFreq                         # 心跳频率（单位：秒）
         self._serverTimeout:int = serverTimeout                         # 服务器响应超时时间 （单位：秒）
+        self._localTimeout:int = localTimeout                           # 本地调用超时
         self._heartbeatTimer:HeartBeatTimer = None                      # 心跳类
         self._receive_task:asyncio.Task = None                          # 接收服务器消息的任务
         self._reconnectTask:asyncio.Task = None                         # 断线重连任务
@@ -144,7 +152,7 @@ class BaseClient:
         self._lastReconectTime:float = None                             # 最后一次重连时间
         self._main_task:asyncio.Task = None
         self._main:callable = None
-
+        self._ignore = ignore                                           # 是否忽略远程调用异常
 
 
     async def start(self,main:Union[Future,Coroutine]=None,uri:str=None,host:str=None,port:int=None):
@@ -184,12 +192,14 @@ class BaseClient:
         await self._close()
 
 
-    def __call__(self, *args: any, **opts: any) -> any:
+    def __call__(self, *args: any, **opts: any) -> callable:
         """指定入口函数，可以使用装饰器方式指定入口函数"""
         if len(args)==0:
             return partial(self.__call__,**opts)
-        self._main = args[0]
-        return args[0]
+        if inspect.iscoroutinefunction(args[0]):
+            self._main = args[0]
+            return args[0]
+        raise ValueError('Must be a coroutine function!')
     
 
     async def _ping(self):
@@ -238,8 +248,8 @@ class BaseClient:
                         topic:Union[str,tuple[str]],
                         callback:callable,
                         *,
-                        timeout:int=5,
-                        ignore:bool=False)->dict:
+                        timeout:int=None,
+                        ignore:bool=None)->dict:
         """# 订阅话题
         存在订阅的话题时，程序会一直等待话题的推送，无订阅话题时程序在执行完入口函数`main`后自动退出
         Args:
@@ -268,14 +278,14 @@ class BaseClient:
         msg = dict(requestType=UtType.SUBSCRIBE.value,topics=topic)
         request:UtRequest = create_UtRequest(msg)
 
-        return await self._send(request,timeout,ignore=ignore)
+        return await self._send(request,timeout=timeout,ignore=ignore)
         
 
     async def unsubscribe(self,
                           topic:Union[str,tuple[str]],
                           *,
-                          timeout:int=5,
-                          ignore:bool=False)->dict:
+                          timeout:int=None,
+                          ignore:bool=None)->dict:
         """# 取消订阅话题
         存在订阅的话题时，程序会一直等待话题的推送，无订阅话题时程序在执行完入口函数`main`后自动退出
         Args:
@@ -296,7 +306,7 @@ class BaseClient:
 
         msg = dict(requestType=UtType.UNSUBSCRIBE.value,topics=topic)
         request:UtRequest = create_UtRequest(msg)
-        res = await self._send(request,timeout,ignore=ignore)
+        res = await self._send(request,timeout=timeout,ignore=ignore)
         if not self._topics_handler:logger.warning('已无任何订阅.')
         return res
         
@@ -306,10 +316,10 @@ class BaseClient:
                    args:list=tuple(),
                    dicts:dict=dict(),
                    *,
-                   timeout:int=5,
+                   timeout:int=None,
                    multicall:bool=False,
-                   encrypt=None,
-                   ignore:bool=False)->Union[UtResponse,dict]:
+                   encrypt:bool=None,
+                   ignore:bool=None)->Union[UtResponse,dict]:
         """# 调用远程方法或函数
         Args:
             methodName: 远程的方法或函数的名称
@@ -326,10 +336,10 @@ class BaseClient:
         else:
             encrypt = self._encrypt if encrypt==None else encrypt
             request:UtRequest = create_UtRequest(msg,encrypt=encrypt)
-            return await self._send(request,timeout,ignore=ignore)
+            return await self._send(request,timeout=timeout,ignore=ignore)
         
 
-    async def multicall(self,*calls:Coroutine,encrypt:bool = False,timeout:int=5,ignore:bool=False)->list:
+    async def multicall(self,*calls:Coroutine,encrypt:bool = False,timeout:int=None,ignore:bool=None)->list:
         """# 合并多次调用远程方法或函数
         Args:
             *calls: 需要远程调用协程对象
@@ -343,7 +353,9 @@ class BaseClient:
         msgs = await asyncio.gather(*calls)
         encrypt = self._encrypt if encrypt==None else encrypt
         request:UtRequest = create_UtRequest(dict(requestType=UtType.MULTICALL,multiple=msgs),encrypt=encrypt)
-        res = await self._send(request,timeout)
+        res = await self._send(request,timeout=timeout)
+
+        ignore = self._ignore if ignore== None else ignore
         if ignore:
             return [r.get('result') for r in res]
         else:
@@ -357,8 +369,11 @@ class BaseClient:
             
 
 
-    async def _send(self,request:UtRequest,timeout:int=5,heartbeat:bool=False,ignore:bool=False):
+    async def _send(self,request:UtRequest,*,timeout:int=None,ignore:bool=None,heartbeat:bool=False):
         try:
+            timeout = self._localTimeout if timeout==None else timeout
+            ignore = self._ignore if ignore== None else ignore
+
             async with self._lock:     # 每次只允许一个协程调用call方法    
                 if heartbeat:
                     self._writer.write(HeartBeat.PING.value)
@@ -386,7 +401,7 @@ class BaseClient:
                 return await self._send(request=request,timeout=timeout,ignore=ignore)
             else:
                 # 本地等待超时，非断线原因
-                logger.warning(f'Request timed out:{request.to_dict()}')
+                logger.warning(f'Local call timeout ({timeout}s):{request.to_dict()}')
                 self.exit()
                 raise e
                 

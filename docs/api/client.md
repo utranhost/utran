@@ -1,13 +1,32 @@
 # 客户端
 
 
-## 客户端
+## 【客户端】
+```python title='使用示例'
+import utran
+from utran.client.client import Client
+
+client = Client()
+
+@client
+async def main():
+    res = await client.call(timeout=2).add(1,2)
+    print(res)
+
+    res:list = await client.multicall(client.call(multicall=True).add(1,2),
+                                      client.call(multicall=True).add(2,2),
+                                      ignore=True)
+    print(res)
+
+
+utran.run(client)
+```
 :::utran.client.client
 
 
 
 
-## 基础客户端
+## 【基础客户端】
 ```python title='使用示例'
 import utran
 from utran.client.baseclient import BaseClient
@@ -58,5 +77,5 @@ if __name__ == "__main__":
 
 :::utran.client.baseclient
 
-## 队列
+## 【队列】
 :::utran.client.que

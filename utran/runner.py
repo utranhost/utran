@@ -31,5 +31,5 @@ def run(app:Union[Server,RpcServer,WebServer,BaseClient,Client],host:str='127.0.
     
     if uri: 
         host,port = parse_utran_uri(uri)
-    if isinstance(app,BaseClient):asyncio.run(app.start(host=host,
-                                                    port=port))
+    if isinstance(app,BaseClient) or isinstance(app,Client):
+        asyncio.run(app.start(host=host,port=port))
