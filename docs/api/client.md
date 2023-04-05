@@ -2,7 +2,30 @@
 
 
 ## 【客户端】
-```python title='使用示例'
+
+#### 同步调用 
+这是一种简便的调用方式，大量任务时并不高效，它每次调用都会建立连接和关闭连接
+```python title='使用示例1'
+import utran
+from utran.client.client import Client
+
+client = Client(uri='utran://127.0.0.1:8081')
+
+res = client.call.add(1,2)
+print(res)
+
+res = client.call.add(1454,2)
+print(res)
+
+res:list = client.multicall(client.call(multicall=True).add(1,2),
+                            client.call(multicall=True).add(2,2),
+                            ignore=True)
+print(res)
+
+```
+#### 异步调用
+这是一种高效的调用方式，只需建立一次连接完成所有任务，支持订阅
+```python title='使用示例2'
 import utran
 from utran.client.client import Client
 
@@ -23,7 +46,7 @@ async def main():
     print(res)
 
 
-utran.run(client)
+utran.run(client,uri='utran://127.0.0.1:8081')
 ```
 :::utran.client.client
 

@@ -189,6 +189,14 @@ class Register:
     def methods_of_rpc(self):
         return self.__rpc_methods
     
+    
+    def __call__(self, *args: any, **kwds: any) -> any:
+        """# 注册选项
+        Args:
+            useProcess (bool): 是否使用进程执行
+            remote (bool): 是否注册到远程，用于扩充远程服务器
+
+        """
 
     def rpc(self,_f_=None,_n_=None,**opts):
         """# RPC注册

@@ -1,18 +1,28 @@
 import asyncio
 from typing import Coroutine, Union
 from utran.client.baseclient import BaseClient
+from utran.utils import parse_utran_uri
 
 
 
 class RPCProxy:
     """代理远程调用"""
     def __init__(self,bsclient:BaseClient):
-        self._opts = dict()
+        self._temp_opts = dict()
         self._bsclient = bsclient
+        self._loop = asyncio.get_event_loop()
 
-    def __getattr__(self, methodname):
-        def wrapper(*args, **dicts):     
-            return asyncio.create_task(self._bsclient.call(methodname,args=args,dicts=dicts,**self._opts))
+    def __getattr__(self, methodName):
+        def wrapper(*args, **dicts):
+            f = self._bsclient.call(methodName=methodName,args=args,dicts=dicts,**self._temp_opts)
+            if self._bsclient._isRuning:
+                return asyncio.create_task(f)
+            else:
+                if self._temp_opts.get('multicall'):
+                    return f
+                else:
+                    res = self._loop.run_until_complete(self._bsclient.start(main=f))
+                    return res
         return wrapper
 
 
@@ -24,7 +34,7 @@ class RPCProxy:
             ignore: 是否忽略远程执行结果的错误，忽略错误则值用None填充，默认为为client实例化的值
             multicall: 是否标记为合并调用
         """
-        self._opts = dict(timeout= self._bsclient._localTimeout if timeout==None else timeout,
+        self._temp_opts = dict(timeout= self._bsclient._localTimeout if timeout==None else timeout,
                           encrypt= self._bsclient._encrypt if timeout==None else encrypt,
                           ignore = self._bsclient._ignore if ignore==None else ignore,
                           multicall = multicall)
@@ -36,15 +46,18 @@ class Client:
     支持代理调用
     Args:
         heartbeatFreq: 心跳频率
-        serverTimeout: 服务器响应超时时间，用于判断是否断线，超过此值会进行重连 (单位:秒)
+        serverTimeout: 服务器心跳响应超时时间，用于判断是否断线，超过此值会进行重连 (单位:秒)
         localTimeout: 本地调用超时 (单位:秒)
         reconnectNum: 断线重连的次数
         ignore: 是否忽略远程调用异常
         encrypt: 是否加密传输
     """
-    __slots__ = ('_localTimeout','_ignore','_encrypt','_heartbeatFreq','_serverTimeout','_reconnectNum','_bsclient','_proxy')
+    __slots__ = ('_localTimeout','_ignore','_encrypt','_heartbeatFreq','_serverTimeout','_reconnectNum','_bsclient','_proxy','_serveHost','_servePort')
     def __init__(self,
                  *,
+                 host:str=None,
+                 port:int=None,
+                 uri:str = None,
                  heartbeatFreq:int=2,
                  serverTimeout:int=2,
                  localTimeout:int=5,
@@ -59,24 +72,35 @@ class Client:
         self._serverTimeout:int = serverTimeout                         # 服务器响应超时时间 （单位：秒）
         self._reconnectNum:int = reconnectNum                           # 断线重连的次数
 
+        self._serveHost:str = host                                      # 服务器host 
+        self._servePort:int = port                                      # 服务器端口号
+
+        if uri:
+            self._serveHost,self._servePort = parse_utran_uri(uri)
+
         # 基础客户端
         self._bsclient:BaseClient = BaseClient(heartbeatFreq=heartbeatFreq,
                                                serverTimeout=serverTimeout,
                                                reconnectNum=reconnectNum,
-                                               encrypt=encrypt)
+                                               encrypt=encrypt,
+                                               host=self._serveHost,
+                                               port=self._servePort)
 
         self._proxy = RPCProxy(self._bsclient)
-
+        
 
     def __call__(self, *args: any,**opts: any) -> callable:
         return self._bsclient(*args,**opts)
     
     async def start(self,main:Union[asyncio.Future,Coroutine]=None,uri:str=None,host:str=None,port:int=None):
+        host = host or self._serveHost
+        port = port or self._servePort
         await self._bsclient.start(main=main,uri=uri,host=host,port=port)
 
     @property
     def subscribe(self)->BaseClient.subscribe:
         """订阅
+        异步方法
         Returns:
             返回订阅方法
         """
@@ -86,25 +110,44 @@ class Client:
     @property
     def unsubscribe(self)->BaseClient.unsubscribe:
         """订阅
+        异步方法
         Returns:
             返回取消订阅方法
         """
         return self._bsclient.unsubscribe
     
 
-    @property
-    def multicall(self)->BaseClient.multicall:
-        """合并多次调用
+    def multicall(self,*calls:Coroutine,encrypt:bool = False,timeout:int=None,ignore:bool=None)->list:
+        """# 合并多次调用远程方法或函数
+        支持同步和异步的调用，
+                同步调用方式会：1自动建立连接 -- 2任务执行完毕 --3自动关闭连接，适用于未建立连接时使用。
+                异步调用方式会：1使用现有的连接-- 2任务执行完毕。适用于已建立连接时。
+        Args:
+            *calls: 需要远程调用协程对象
+            encrypt: 是否加密
+            timeout: 本地等待响应超时，抛出TimeoutError错误（单位：秒）
+            ignore: 是否忽略远程执行结果的错误，忽略错误则值用None填充
+        
         Returns:
-            返回合并调用的方法
+            执行结果按顺序放在列表中返回
         """
-        return self._bsclient.multicall
+        f = self._bsclient.multicall(*calls,encrypt=encrypt,timeout=timeout,ignore=ignore)        
+        if self._bsclient._isRuning:
+            return f
+        else:
+            _loop = asyncio.get_event_loop()
+            return _loop.run_until_complete(self._bsclient.start(main=f))
+
 
     @property
     def call(self)->RPCProxy:
         """远程调用
+        支持同步和异步的调用，
+                同步调用方式会：1自动建立连接 -- 2任务执行完毕 --3自动关闭连接，适用于未建立连接时使用。
+                异步调用方式会：1使用现有的连接-- 2任务执行完毕。适用于已建立连接时。
+
         Returns:
-            返回远程调用的方法
+            返回远程调用的代理类
         """
         return self._proxy
         

@@ -91,7 +91,7 @@ class BaseClient:
     """# 基础客户端
     Args:
         heartbeatFreq: 心跳频率
-        serverTimeout: 服务器响应超时时间，用于判断是否断线，超过此值会进行重连 (单位:秒)
+        serverTimeout: 服务器心跳响应超时时间，用于判断是否断线，超过此值会进行重连 (单位:秒)
         localTimeout: 本地调用超时 (单位:秒)
         reconnectNum: 断线重连的次数
         ignore: 是否忽略远程调用异常
@@ -119,10 +119,13 @@ class BaseClient:
                '_lastReconectTime',
                '_main_task',
                '_main',
-               '_ignore')
+               '_ignore',
+               '_isRuning')
     
     def __init__(self,
                  *,
+                 host:str=None,
+                 port:int=None,
                  heartbeatFreq:int=2,
                  serverTimeout:int=2,
                  localTimeout:int=10,
@@ -145,15 +148,15 @@ class BaseClient:
         self._receive_task:asyncio.Task = None                          # 接收服务器消息的任务
         self._reconnectTask:asyncio.Task = None                         # 断线重连任务
         self._reconnectNum:int = reconnectNum                           # 断线重连的次数
-        self._serveHost:str = None                                      # 服务器host 
-        self._servePort:int = None                                      # 服务器端口号
+        self._serveHost:str = host                                      # 服务器host 
+        self._servePort:int = port                                      # 服务器端口号
         self._reconnectingEvent:asyncio.Event = asyncio.Event()         # 用于等待重连
         self._reconnectingEvent.set()               # 默认关闭等待
         self._lastReconectTime:float = None                             # 最后一次重连时间
         self._main_task:asyncio.Task = None
         self._main:callable = None
         self._ignore = ignore                                           # 是否忽略远程调用异常
-
+        self._isRuning = False                                          # 是否运行中
 
     async def start(self,main:Union[Future,Coroutine]=None,uri:str=None,host:str=None,port:int=None):
         """# 启动连接
@@ -164,18 +167,27 @@ class BaseClient:
         """
         main = main or self._main
         assert main,ValueError('No entry function or method was specified')
-        self._serveHost,self._servePort = [host,port]
+        self._serveHost = host or self._serveHost
+        self._servePort = port or self._servePort
         if uri:
             self._serveHost,self._servePort = parse_utran_uri(uri)
         
         assert self._serveHost and self._servePort,ValueError('Specify the correct host and port.')
 
         self._reader, self._writer = await asyncio.open_connection(self._serveHost, self._servePort)
-        
-        self._main_task = asyncio.create_task(main())
-        self._receive_task = asyncio.create_task(self.__receive())        
-        
+        self._receive_task = asyncio.create_task(self.__receive())  
         self._heartbeatTimer = self._heartbeatTimer or HeartBeatTimer(self._ping,self._ping_timeout,self._heartbeatFreq,self._serverTimeout)
+        
+        self._isRuning = True
+        if asyncio.iscoroutine(main):
+            result = await main            
+            self._receive_task.cancel()
+            self._isRuning = False
+            await self._close()            
+            return result
+
+        if asyncio.iscoroutinefunction(main):
+            self._main_task = asyncio.create_task(main())
 
         try:
             await self._main_task
@@ -189,8 +201,9 @@ class BaseClient:
 
         await self._exitEvent.wait()
         self._receive_task.cancel()
+        self._isRuning = False
         await self._close()
-
+        
 
     def __call__(self, *args: any, **opts: any) -> callable:
         """指定入口函数，可以使用装饰器方式指定入口函数"""

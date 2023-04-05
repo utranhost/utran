@@ -26,24 +26,27 @@ async def main():
     res = await client.call('add',dicts=dict(a=0,b=2))
     print(res)
 
-    res = await asyncio.gather(client.call('add511',dicts=dict(a=0,b=1),timeout=5,ignore=True),
-                   client.call('add',dicts=dict(a=0,b=1),timeout=5),
-                   client.call('add',dicts=dict(a=0,b=1),timeout=5),
-                   client.call('add',dicts=dict(a=0,b=1),timeout=5),
-                   client.call('add',dicts=dict(a=0,b=1),timeout=5))
+    # res = await asyncio.gather(client.call('add511',dicts=dict(a=0,b=1),timeout=5,ignore=True),
+    #                client.call('add',dicts=dict(a=0,b=1),timeout=5),
+    #                client.call('add',dicts=dict(a=0,b=1),timeout=5),
+    #                client.call('add',dicts=dict(a=0,b=1),timeout=5),
+    #                client.call('add',dicts=dict(a=0,b=1),timeout=5))
+    # print(res)
+
+    res:list = await client.multicall(client.call('add',args=[0,2],multicall=True),
+                                    client.call('add',dicts=dict(a=1,b=2),multicall=True),
+                                    client.call('add',dicts=dict(a=2,b=2),multicall=True),
+                                    client.call('add',dicts=dict(a=3,b=2),multicall=True),
+                                    client.call('add',dicts=dict(a=4,b=2),multicall=True),
+                                    client.call('ad3d',dicts=dict(a=5,b=2),multicall=True),
+                                    client.call('add',dicts=dict(a=6,b=2),multicall=True)
+                                    ,ignore=True)
     print(res)
 
     res:list = await client.multicall(client.call('add0',args=[0,2],multicall=True),
-                                                  client.call('add',dicts=dict(a=1,b=2),multicall=True),
-                                                  client.call('add',dicts=dict(a=2,b=2),multicall=True),
-                                                  client.call('add',dicts=dict(a=3,b=2),multicall=True),
-                                                  client.call('add',dicts=dict(a=4,b=2),multicall=True),
-                                                  client.call('ad3d',dicts=dict(a=5,b=2),multicall=True),
-                                                  client.call('add',dicts=dict(a=6,b=2),multicall=True)
-                                                  ,ignore=True)
+                                    client.call('add',dicts=dict(a=1,b=2),multicall=True),
+                                    ignore=True)
     print(res)
-
-
 
     res = await client.unsubscribe('good')
     print(res)
