@@ -174,14 +174,19 @@ class UtRequest:
 
 REQUEST_ID:int=0
 def gen_requestId()->int:
-    """生成请求id"""
+    """生成请求全局唯一的id"""
     global REQUEST_ID
     REQUEST_ID+=1
     return REQUEST_ID
 
 
 def create_UtRequest(msg:Union[dict,list[dict]],id=None,encrypt=False)->UtRequest:
-    """生成UtRequest实例"""
+    """# 生成UtRequest实例
+    Args:
+        msg: 完整请求体的字典形式(没有id值),当为list[dict]时，会打包成一个multiple请求。
+        id: 可选，如果没有指定id，会自动生成
+        encrypt: 是否加密传输数据
+    """
     def gen_request_dict(msg:Union[dict,list[dict]],id=None)->dict:
         id = id or gen_requestId()
         if type(msg)==list:
@@ -191,7 +196,7 @@ def create_UtRequest(msg:Union[dict,list[dict]],id=None,encrypt=False)->UtReques
             msg['id'] = id
             return msg
         else:
-            raise ValueError('"msg" must be a dictionary type!')
+            raise ValueError('"msg" must be a dict type!')
         return msg
     res:dict = gen_request_dict(msg,id)
     res['encrypt'] = encrypt
