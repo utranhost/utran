@@ -1,6 +1,7 @@
 
 
 import asyncio
+from multiprocessing import Pool
 import time
 from typing import Union
 import ujson
@@ -16,39 +17,53 @@ from utran.utils import unpack_data2_utran
 
 class RpcServer(BaseServer):
     """服务端支持 rpc、sub/pub"""
-    __slots__=tuple()
+    __slots__ = tuple()
+
     def __init__(self,
-            *,
-            register: Register = None,
-            sub_container: SubscriptionContainer = None,
-            severName: str = 'RpcServer',
-            dataMaxsize: int = 102400,
-            limitHeartbeatInterval: int = 1,
-            dataEncrypt: bool = False) -> None:
-        
+                 *,
+                 register: Register = None,
+                 sub_container: SubscriptionContainer = None,
+                 severName: str = 'RpcServer',
+                 checkParams: bool = True,
+                 checkReturn: bool = True,
+                 dataMaxsize: int = 102400,
+                 limitHeartbeatInterval: int = 1,
+                 dataEncrypt: bool = False,
+                 workers: int = 0,
+                 pool=None) -> None:
         super().__init__(
-            register=register, 
-            sub_container=sub_container, 
-            severName=severName, 
-            dataMaxsize=dataMaxsize, 
-            limitHeartbeatInterval=limitHeartbeatInterval, 
-            dataEncrypt=dataEncrypt)
+            register=register,
+            sub_container=sub_container,
+            severName=severName,
+            checkParams=checkParams,
+            checkReturn=checkReturn,
+            dataMaxsize=dataMaxsize,
+            limitHeartbeatInterval=limitHeartbeatInterval,
+            dataEncrypt=dataEncrypt,
+            workers=workers,
+            pool=pool)
 
-
-    async def start(self,host: str,port: int,) -> None:
+    async def start(self, host: str, port: int,) -> None:
         """
         # 运行服务
         示例:
             ### server = Server()
             ### asyncio.run(server.start())
         """
-        if self._server != None: return
+        if self._server != None:
+            return
         self._host = host
         self._port = port
-        self._server = await asyncio.start_server(self.__handle_client, self._host, self._port)
-        logger.success(f"\n{'='*6} {self._severName} started on {self._host}:{self._port} {'='*6}")
-        await self._exitEvent.wait()
 
+        # 创建进程池
+        if self._workers > 0 and self._pool is None:
+            # maxtasksperchild 每个子进程最多执行多少个任务后终止并重新创建
+            self._pool = Pool(self._workers, maxtasksperchild=100)
+
+        self._server = await asyncio.start_server(self.__handle_client, self._host, self._port)
+        logger.success(
+            f"\n{'='*6} {self._severName} started on {self._host}:{self._port} {'='*6}")
+        await self._exitEvent.wait()
 
     async def publish(self, topic: str, msg: dict) -> None:
         """
@@ -58,7 +73,6 @@ class RpcServer(BaseServer):
             msg (dict): 消息
         """
         await process_publish_request(dict(topic=topic, msg=msg), self._sub_container)
-
 
     async def __handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         buffer = b''
@@ -76,7 +90,8 @@ class RpcServer(BaseServer):
                 if data == HeartBeat.PING.value:
                     # print("PING")
                     if time.time() - t < self._limitHeartbeatInterval:
-                        logger.debug(f'两次心跳得时间间隔小于{self._limitHeartbeatInterval}s，强制断开连接。')
+                        logger.debug(
+                            f'两次心跳得时间间隔小于{self._limitHeartbeatInterval}s，强制断开连接。')
                         break   # 当两次心跳得时间间隔小于1s，强制断开连接。
 
                     writer.write(HeartBeat.PONG.value)
@@ -89,18 +104,18 @@ class RpcServer(BaseServer):
                         data, buffer, self._dataMaxsize)
                     if request is None:
                         continue
-                    
+
                     request: str = request.decode('utf-8')
-                    requestName:str = requestName.decode('utf-8')
-                    res: Union[dict,list] = ujson.loads(request)
+                    requestName: str = requestName.decode('utf-8')
+                    res: Union[dict, list] = ujson.loads(request)
 
                 except Exception as e:
                     logger.debug(f'收客户端数据，拆包时异常:{e}')
                     break
 
                 # 处理请求
-                if await process_request(create_UtRequest(res,res.get('id'),res.get('encrypt')), connection, self._register, self._sub_container):
-                    break
+                asyncio.create_task(
+                    process_request(create_UtRequest(res, res.get('id'), res.get('encrypt')), connection, self._register, self._sub_container, self._pool))
 
             self._sub_container.del_sub(connection.id)
             try:

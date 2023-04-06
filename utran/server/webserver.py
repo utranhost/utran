@@ -1,5 +1,6 @@
 
 import asyncio
+from multiprocessing import Pool
 import time
 import ujson
 import re
@@ -19,28 +20,39 @@ from utran.log import logger
 
 class WebServer(BaseServer):
     __slots__=tuple()
-    def __init__(
-            self,
-            *,
-            register: Register = None,
-            sub_container: SubscriptionContainer = None,
-            severName: str = 'WebServer',
-            dataMaxsize: int = 102400,
-            limitHeartbeatInterval: int = 1,
-            dataEncrypt: bool = False) -> None:
-        
+
+    def __init__(self, 
+                 *, 
+                 register: Register = None, 
+                 sub_container: SubscriptionContainer = None, 
+                 severName: str = 'WebServer', 
+                 checkParams: bool = True, 
+                 checkReturn: bool = True, 
+                 dataMaxsize: int = 102400, 
+                 limitHeartbeatInterval: int = 1, 
+                 dataEncrypt: bool = False, 
+                 workers: int = 0, 
+                 pool=None) -> None:
         super().__init__(
             register=register, 
             sub_container=sub_container, 
             severName=severName, 
+            checkParams=checkParams, 
+            checkReturn=checkReturn, 
             dataMaxsize=dataMaxsize, 
             limitHeartbeatInterval=limitHeartbeatInterval, 
-            dataEncrypt=dataEncrypt)
+            dataEncrypt=dataEncrypt, 
+            workers=workers, 
+            pool=pool)
 
 
     async def start(self,host: str,port: int,) -> None:
         self._host = host
         self._port = port
+        # 创建进程池
+        if self._workers>0 and self._pool is None:
+            self._pool = Pool(self._workers,maxtasksperchild=100)     # maxtasksperchild 每个子进程最多执行多少个任务后终止并重新创建
+            
         server = web.Server(self.handle_request)
         runner = web.ServerRunner(server)
         await runner.setup()
@@ -87,7 +99,7 @@ class WebServer(BaseServer):
                 if '=' in p:
                     k,v = re.split(r"=", p, maxsplit=1)
                     dicts[k.strip()]=v.strip()
-            state,result,error = await rm.execute(args=tuple(),dicts=dicts)
+            state,result,error = await rm.execute(args=tuple(),dicts=dicts,pool=self._pool)
             execute_res['state'] = state.value
             execute_res['error'] = error
             execute_res['result'] = result
@@ -125,7 +137,7 @@ class WebServer(BaseServer):
                         if type(res)!=dict:break
 
                         # 处理请求
-                        if await process_request(create_UtRequest(res,res.get('id'),res.get('encrypt')),connection,self._register,self._sub_container):
+                        if await process_request(create_UtRequest(res,res.get('id'),res.get('encrypt')),connection,self._register,self._sub_container,pool=self._pool):
                             break
                         continue
                 except:

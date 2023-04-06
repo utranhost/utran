@@ -1,5 +1,7 @@
 import asyncio
+from concurrent.futures import ProcessPoolExecutor
 
+from multiprocessing import Pool
 from utran.handler import process_publish_request
 from utran.object import UtRequest, UtType
 from utran.register import Register
@@ -37,7 +39,9 @@ class Server:
         '_limitHeartbeatInterval',
         '_webServer',
         '_rpcServer',
-        '__isruning')
+        '__isruning',
+        '_workers',
+        '_pool')
     
     def __init__(
             self,
@@ -51,7 +55,8 @@ class Server:
             severName: str = 'UtranServer',
             dataMaxsize: int = 102400,
             limitHeartbeatInterval: int = 1,
-            dataEncrypt: bool = False) -> None:
+            dataEncrypt: bool = False,
+            workers:int = 1) -> None:
 
 
         assert not without_rpcserver or not without_webserver,"There must be a service running."
@@ -60,16 +65,18 @@ class Server:
         self._without_rpcserver = without_rpcserver
         self._checkParams = checkParams
         self._checkReturn = checkReturn
-        self._register = register or Register(checkParams,checkReturn)
+        
+        self._workers = workers                             # 进程池数量        
+        self._register = register or Register(checkParams=checkParams,checkReturn=checkReturn,workers=workers)
         self._sub_container = sub_container or SubscriptionContainer()
-                
+        
         self._severName = severName
         self._dataMaxsize = dataMaxsize        
         self._limitHeartbeatInterval = limitHeartbeatInterval
         self._dataEncrypt = dataEncrypt
-        
-        self.__isruning=False
 
+        self.__isruning=False
+        self._pool = None
 
     async def start(self,
                     host: str = '127.0.0.1',
@@ -85,23 +92,35 @@ class Server:
         if self.__isruning: return
         else: self.__isruning = True
 
+        # 创建进程池
+        if self._workers>0 and self._pool is None:
+            self._pool = ProcessPoolExecutor(self._workers)
+
         self._host = host
         self._web_port= web_port
         self._rpc_port = rpc_port
         self._webServer = WebServer(
             register= self._register, 
             sub_container= self._sub_container,
+            checkParams=self._checkParams,
+            checkReturn=self._checkReturn,
             dataMaxsize= self._dataMaxsize, 
             limitHeartbeatInterval= self._limitHeartbeatInterval, 
-            dataEncrypt= self._dataEncrypt) if not self._without_webserver else None
+            dataEncrypt= self._dataEncrypt,
+            workers=self._workers,
+            pool=self._pool) if not self._without_webserver else None
 
         self._rpcServer = RpcServer(
             register= self._register, 
             sub_container= self._sub_container,
+            checkParams=self._checkParams,
+            checkReturn=self._checkReturn,
             dataMaxsize= self._dataMaxsize, 
             limitHeartbeatInterval= self._limitHeartbeatInterval, 
-            dataEncrypt= self._dataEncrypt) if not self._without_rpcserver else None
-                
+            dataEncrypt= self._dataEncrypt,
+            workers=self._workers,
+            pool=self._pool) if not self._without_rpcserver else None
+        
         t = []
         if not self._without_rpcserver: t.append(self._rpcServer.start(host,rpc_port))
         if not self._without_webserver: t.append(self._webServer.start(host,web_port))
