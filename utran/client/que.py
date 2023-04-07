@@ -34,8 +34,8 @@ class ResultQueue:
 
         try:
             await asyncio.wait_for(event.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
-            raise TimeoutError(f'Local call timeout ({timeout}s):{request.to_dict()}') 
+        except asyncio.exceptions.TimeoutError:
+            raise asyncio.exceptions.TimeoutError(f'Local call timeout ({timeout}s):{request.to_dict()}') 
         response:UtResponse = self._pop_responses(request.id)
         return response
 

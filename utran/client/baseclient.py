@@ -410,7 +410,7 @@ class BaseClient:
                 if heartbeat:
                     self._writer.write(HeartBeat.PING.value)
                     await self._writer.drain()
-                    print("PING")
+                    # print("PING")
                     return
 
                 self._writer.write(request.pick_utran_request())
@@ -456,7 +456,7 @@ class BaseClient:
             self._heartbeatTimer.alive()
             # 心跳检测                      
             if chunk == HeartBeat.PONG.value:
-                print(f"-PONG: {self._heartbeatTimer.getResponseDelay()}ms")
+                # print(f"-PONG: {self._heartbeatTimer.getResponseDelay()}ms")
                 continue
 
             name,message,self._buffer = unpack_data2_utran(chunk, self._buffer)

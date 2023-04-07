@@ -14,7 +14,7 @@ server = Server()
 async def home(name='wolrd'):
     return HttpResponse(text=f"<h3 style ='color: orange;'> Hello {name}.</h3>",content_type='text/html')
 
-@server.register.rpc
+@server.register.(useProcess=True).rpc   # 添加注册选项， useProcess=True为在子进程中执行
 @server.register.post
 @server.register.get
 async def add(a:int,b:int):

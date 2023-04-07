@@ -2,13 +2,19 @@
 
 
 import asyncio
-from typing import Union
+from multiprocessing import Pool
+
 from utran.object import UtRequest, UtType, UtResponse, UtState, create_UtRequest
 from utran.register import RMethod, Register
 from utran.object import ClientConnection, SubscriptionContainer
+from concurrent.futures import ProcessPoolExecutor
 
 
-async def process_request(request:UtRequest,connection:ClientConnection,register:Register,sub_container:SubscriptionContainer)->bool:
+
+
+
+
+async def process_request(request:UtRequest,connection:ClientConnection,register:Register,sub_container:SubscriptionContainer,pool:'Pool')->bool:
     """# 处理请求总入口
     Args:
         request (UtRequest): 请求体
@@ -22,7 +28,8 @@ async def process_request(request:UtRequest,connection:ClientConnection,register
     
     if UtType.RPC==request.requestType:
         #  Rpc请求
-        return await process_rpc_request(request,connection,register)
+        t = asyncio.create_task(process_rpc_request(request,connection,register,pool=pool))
+        return await t
     
     elif UtType.UNSUBSCRIBE==request.requestType:
         # 取消订阅 topic        
@@ -37,14 +44,14 @@ async def process_request(request:UtRequest,connection:ClientConnection,register
         return await process_publish_request(request,sub_container)
 
     elif UtType.MULTICALL == request.requestType:
-        return await process_multicall_request(request,connection,register,sub_container)
+        return await process_multicall_request(request,connection,register,sub_container,pool=pool)
 
     else:
         # logging.log(f"处理请求时,出现不受支持的请求,请求的内容：{request}")
         return True
 
 
-async def process_multicall_request(request:UtRequest,connection:ClientConnection,register:Register,sub_container:SubscriptionContainer)->bool:
+async def process_multicall_request(request:UtRequest,connection:ClientConnection,register:Register,sub_container:SubscriptionContainer,pool:'Pool'=None)->bool:
     """处理multicall请求"""
   
     tasks = []
@@ -52,7 +59,7 @@ async def process_multicall_request(request:UtRequest,connection:ClientConnectio
         r:UtRequest = create_UtRequest(_r)
         if UtType.RPC==r.requestType:
             #  Rpc请求
-            tasks.append(asyncio.create_task(process_rpc_request(r,connection,register,to_send=False)))
+            tasks.append(asyncio.create_task(process_rpc_request(r,connection,register,to_send=False,pool=pool)))
 
             continue
         
@@ -86,7 +93,7 @@ async def process_multicall_request(request:UtRequest,connection:ClientConnectio
 
     
 
-async def process_rpc_request(request:UtRequest,connection:ClientConnection,register:Register,to_send:bool=True)->bool:
+async def process_rpc_request(request:UtRequest,connection:ClientConnection,register:Register,to_send:bool=True,pool:ProcessPoolExecutor=None)->bool:
     """
     # 处理rpc请求
     Args:
@@ -118,7 +125,7 @@ async def process_rpc_request(request:UtRequest,connection:ClientConnection,regi
                         methodName=method_name,
                         responseType=request.requestType)
     if rm:
-        state,result,error = await rm.execute(args,dicts)
+        state,result,error = await rm.execute(args,dicts,pool)
         if state == UtState.FAILED:
             response.state = UtState.FAILED
             response.error = error
@@ -133,8 +140,6 @@ async def process_rpc_request(request:UtRequest,connection:ClientConnection,regi
         return False
     else:
         return response
-
-
 
 
 async def process_subscribe_request(request:UtRequest,connection:ClientConnection,sub_container:SubscriptionContainer,to_send:bool=True)->bool:
@@ -265,6 +270,9 @@ async def process_publish_request(request:UtRequest,sub_container:SubscriptionCo
         
     await asyncio.sleep(0)
     return False
+
+
+
 
 
 

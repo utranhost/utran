@@ -88,7 +88,7 @@ class RpcServer(BaseServer):
 
                 # 心跳检测
                 if data == HeartBeat.PING.value:
-                    # print("PING")
+                    # print("PONG")
                     if time.time() - t < self._limitHeartbeatInterval:
                         logger.debug(
                             f'两次心跳得时间间隔小于{self._limitHeartbeatInterval}s，强制断开连接。')
@@ -114,8 +114,8 @@ class RpcServer(BaseServer):
                     break
 
                 # 处理请求
-                asyncio.create_task(
-                    process_request(create_UtRequest(res, res.get('id'), res.get('encrypt')), connection, self._register, self._sub_container, self._pool))
+                if await process_request(create_UtRequest(res, res.get('id'), res.get('encrypt')), connection, self._register, self._sub_container, self._pool):
+                    break
 
             self._sub_container.del_sub(connection.id)
             try:

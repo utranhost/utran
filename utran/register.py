@@ -2,11 +2,10 @@
 import asyncio
 import inspect
 from functools import partial
-from concurrent.futures import Future, ProcessPoolExecutor
-from typing import Callable, Coroutine, Tuple
+from concurrent.futures import ProcessPoolExecutor
+from typing import Callable
 
 from utran.object import BaseDataModel, UtState
-from utran.utils import parameter_convert_list
 from utran.log import logger
 
 def allowType(v,t,n):
@@ -63,20 +62,6 @@ def cheekType(params:tuple,annotations:dict,args:tuple,dicts:dict={})->tuple:
     return tuple(args),dicts
 
 
-class ResultWapper:
-    __slots__ = ('data','_event')
-    def __init__(self) -> None:
-        self._event = asyncio.Event()
-    
-    async def get_data(self):
-        await self._event.wait()
-        return self.data
-    
-    def executor_done(self,future:Future):
-        print(future.done())
-        result = future.result()
-        self.data = result
-        self._event.set()
 
 def asyncfn_runner(fn:Callable,*args,**kwds):
     """子进程中的异步执行器"""

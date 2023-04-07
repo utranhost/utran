@@ -1,4 +1,5 @@
 
+from multiprocessing import freeze_support
 import os
 os.sys.path.append(os.path.abspath('./'))
 os.sys.path.append(os.path.abspath('../'))
@@ -22,10 +23,26 @@ async def add(a:int,b:int):
     await asyncio.sleep(1)
     return a+b
 
-@server.register.rpc
+@server.register(useProcess=True).get
+@server.register(useProcess=True).rpc
 async def add0(a:int,b:int):
-    await asyncio.sleep(3)
+    # await asyncio.sleep(3)
     return a+b
+
+@server.register.get('/myclass',a=3,b=2)
+@server.register(useProcess=True).rpc('myclass',a=1,b=2)
+class Myclass:
+    def __init__(self,a,b) -> None:
+        self.a = a
+        self.b = b
+
+    def get_result(self):
+        return self.a + self.b
+
+    def add(self,a:int,b:int):
+        self.a = a
+        self.b = b
+        return a+b
 
 
 @server.register.rpc
@@ -46,4 +63,8 @@ async def pub(topic:str,msg:str):
     await server.publish(id,msg,topic)
 
 
-utran.run(server)
+
+
+if __name__ == '__main__':
+    freeze_support()
+    utran.run(server)
