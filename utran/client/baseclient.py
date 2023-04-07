@@ -22,7 +22,7 @@ class HeartBeatTimer:
         ping_freq: 发ping的频率(单位：秒)
         pong_timeout: 服务器超时设置，服务器超过设定值没有回应时执行timeout_callback
     """
-    __slots__=('_ping_freq','_pong_timeout','_pingTask','_timeoutTask','_ping_sender','_timeout_callback')
+    __slots__=('_ping_freq','_pong_timeout','_pingTask','_timeoutTask','_ping_sender','_timeout_callback','_loop','_lastsendTime')
 
     def __init__(self,
                  ping_sender:Callable,
@@ -30,61 +30,59 @@ class HeartBeatTimer:
                  ping_freq:int=2,
                  pong_timeout:int=2,
                  ) -> None:
-        
+        self._loop = asyncio.get_event_loop()
         self._ping_freq = ping_freq
         self._pong_timeout = pong_timeout
-        self._pingTask:asyncio.Task = None
-        self._timeoutTask:asyncio.Task = None
+        self._pingTask:asyncio.TimerHandle = None
+        self._timeoutTask:asyncio.TimerHandle = None
         self._ping_sender =ping_sender
         self._timeout_callback = timeout_callback
+
+        self._lastsendTime:float = self._loop.time()
         self.alive()
 
+        
     def alive(self):
-        """# 确认存活
+        """# 服务器确认存活
 
-        执行以下操作:
-            > 1.撤销前一次的超时倒计时
-
-            > 2.撤销未执行的发ping操作
-
-            > 3.创建新的发ping倒计时
-
-            > 4.创建新的超时倒计时
+        步骤:
+            > 1.撤销超时任务
+            > 2.撤销上次的执行的发ping操作
+            > 2.创建新的延迟发ping操作
         """
+
         if self._timeoutTask:
             self._timeoutTask.cancel()
 
-        if self._pingTask and not self._pingTask.done():
+        if self._pingTask:
             self._pingTask.cancel()
 
-        self._pingTask = asyncio.create_task(self.__ping())
-        self._timeoutTask = asyncio.create_task(self.__timeout())
+        self._pingTask = self._loop.call_later(self._ping_freq,self.__ping)
 
+    def getResponseDelay(self)->float:
+        """# 获取响应延迟时间，
+        需要在收到服务器Pong响应时调用
 
-    async def __timeout(self):
-        # print("创建超时任务")
-        try:
-            await asyncio.sleep(self._pong_timeout+self._ping_freq)
-            # print("执行超时任务")
-            self._pingTask.cancel()
-            if inspect.iscoroutinefunction(self._timeout_callback):
-                await self._timeout_callback()                
-            else:
-                self._timeout_callback()
-        except asyncio.CancelledError:
-            # print("超时任务被取消")
-            pass
+        Returns:
+            返回毫秒数，保留小数点后三位        
+        """
+        t = (time.time() - self._lastsendTime)*1000
+        return round(t,3)
 
-    async def __ping(self):
-        try:
-            await asyncio.sleep(self._ping_freq)
-            if inspect.iscoroutinefunction(self._ping_sender):
-                await self._ping_sender()
-            else:
-                self._ping_sender()
-            # print("PING")
-        except asyncio.CancelledError:            
-            pass
+    def __timeout(self):
+        if inspect.iscoroutinefunction(self._timeout_callback):
+            asyncio.create_task(self._timeout_callback())
+        else:
+            self._timeout_callback()
+
+    def __ping(self):
+        if inspect.iscoroutinefunction(self._ping_sender):
+            asyncio.create_task(self._ping_sender())
+        else:
+            self._ping_sender()
+        self._lastsendTime:float = time.time()
+        self._timeoutTask = self._loop.call_later(self._pong_timeout, self.__timeout)
+
 
 
 class BaseClient:
@@ -120,7 +118,8 @@ class BaseClient:
                '_main_task',
                '_main',
                '_ignore',
-               '_isRuning')
+               '_isRuning',
+               '_curSendTask')
     
     def __init__(self,
                  *,
@@ -157,6 +156,7 @@ class BaseClient:
         self._main:callable = None
         self._ignore = ignore                                           # 是否忽略远程调用异常
         self._isRuning = False                                          # 是否运行中
+        self._curSendTask:asyncio.Task = None
 
     async def start(self,main:Union[Future,Coroutine]=None,uri:str=None,host:str=None,port:int=None):
         """# 启动连接
@@ -191,7 +191,8 @@ class BaseClient:
 
         try:
             await self._main_task
-            if self._topics_handler: logger.info('主函数执行完成,持续等待订阅推送..')
+            if self._topics_handler: logger.info('主函数执行完毕,持续等待订阅推送..')
+            self._heartbeatTimer.alive()
         except Exception as e:
             self._exitEvent.set()
             raise e
@@ -206,7 +207,9 @@ class BaseClient:
         
 
     def __call__(self, *args: any, **opts: any) -> callable:
-        """指定入口函数，可以使用装饰器方式指定入口函数"""
+        """# 指定入口函数，可以使用装饰器方式指定入口函数
+        opts 选项参数暂时未设置功能，待开发..
+        """
         if len(args)==0:
             return partial(self.__call__,**opts)
         if inspect.iscoroutinefunction(args[0]):
@@ -217,7 +220,10 @@ class BaseClient:
 
     async def _ping(self):
         """向服务器发送ping"""
-        await self._send(None,heartbeat=True)
+        try:
+            await self._send(None,heartbeat=True)
+        except ConnectionResetError as e:
+            logger.error('发送PING时服务器错误，'+str(e))
 
 
 
@@ -234,25 +240,39 @@ class BaseClient:
         self._reconnectingEvent.clear()
         while n>0:
             if n<=12:logger.error(f"剩余{n}次重连..")
+            await self._close()
             try:
                 self._receive_task.cancel()
                 self._reader, self._writer = await asyncio.open_connection(self._serveHost, self._servePort)
                 logger.success(f"重连成功")
                 self._lastReconectTime = time.time()
-                self._reconnectingEvent.set()
+                if self._curSendTask and not self._curSendTask.done():
+                    self._curSendTask.cancel()
+                    self._curSendTask = None
 
+                self._reconnectingEvent.set()
                 self._receive_task = asyncio.create_task(self.__receive())
+
                 await asyncio.sleep(0.3)
-                # self._heartbeatTimer.alive()
-                [await self.subscribe(t,c) for t,c in self._topics_handler.items()]   # 订阅话题
-                await self._ping()
+                self._heartbeatTimer.alive()
+                if self._topics_handler:
+                    topics = list(self._topics_handler.keys())
+                    request:UtRequest = create_UtRequest(dict(requestType=UtType.SUBSCRIBE.value,topics=topics))               
+                    await self._send(request,timeout=10,ignore=True)
+                    logger.success(f"已重新订阅话题: {topics}.")
+                    
+
+                # await self._ping()
                 return True
-                # await asyncio.wait_for(self._ping(),timeout=1)
+
             except Exception as e:
                 logger.error(f"重连失败:{e}")
                 await asyncio.sleep(1)
             n-=1
-        logger.error("服务器无响应重连结束，程序退出！")        
+
+        self._receive_task.cancel()    
+        self._main_task.cancel()
+        logger.error("服务器无响应重连结束，程序退出！")      
         await self.exit()
 
 
@@ -295,8 +315,7 @@ class BaseClient:
         
 
     async def unsubscribe(self,
-                          topic:Union[str,tuple[str]],
-                          *,
+                          *topic:str,
                           timeout:int=None,
                           ignore:bool=None)->dict:
         """# 取消订阅话题
@@ -313,9 +332,8 @@ class BaseClient:
         |---------|-----------|
         |所有已订阅的话题 `list`|本次取消订阅的话题 `list`|
         """
-        if type(topic) in [list,tuple]: [self._topics_handler.pop(t) for t in topic]              
-        elif type(topic)==str:self._topics_handler.pop(topic)
-        else:raise ValueError(f'"{topic}" must be a str or List[str] !')
+        [self._topics_handler.pop(t) for t in topic if t in self._topics_handler]              
+
 
         msg = dict(requestType=UtType.UNSUBSCRIBE.value,topics=topic)
         request:UtRequest = create_UtRequest(msg)
@@ -383,52 +401,62 @@ class BaseClient:
 
 
     async def _send(self,request:UtRequest,*,timeout:int=None,ignore:bool=None,heartbeat:bool=False):
+        timeout = self._localTimeout if timeout==None else timeout
+        ignore = self._ignore if ignore== None else ignore            
+        # if heartbeat :print("执行发送心跳任务")
+        # else: print("执行发送请求任务",request.id)
         try:
-            timeout = self._localTimeout if timeout==None else timeout
-            ignore = self._ignore if ignore== None else ignore
-
-            async with self._lock:     # 每次只允许一个协程调用call方法    
+            async with self._lock:     # 每次只允许一个协程调用call方法
                 if heartbeat:
                     self._writer.write(HeartBeat.PING.value)
                     await self._writer.drain()
+                    print("PING")
                     return
-                
+
                 self._writer.write(request.pick_utran_request())
                 await self._writer.drain()
-                response:UtResponse = await self._reslutqueue.wait_response(request,timeout=timeout)
+
+                self._curSendTask = asyncio.ensure_future(self._reslutqueue.wait_response(request,timeout=timeout))
+                try:
+                    response:UtResponse = await self._curSendTask
+                except asyncio.exceptions.CancelledError:
+                    raise asyncio.exceptions.TimeoutError('服务器断线，尝试重新执行请求')
+                
                 if response.state == UtState.FAILED:
                     if ignore:return response.result
                     else:
-                        raise RuntimeError(response.error)
+                        raise asyncio.exceptions.TimeoutError(response.error)
                 else:
                     return response.result
-
-        except TimeoutError as e:
+                
+        except asyncio.exceptions.TimeoutError as e:
             await self._reconnectingEvent.wait()
             if self._lastReconectTime is not None:
                 # 刚断线重连成功
                 async with self._lock:
                     self._reslutqueue.pop_cache_request(request.id)
-                    if not self._reslutqueue.has_request_cache():
+                    if not self._reslutqueue.has_request_cache():   # 如果没有其他被中断的请求，清除本次断线记录
                         self._lastReconectTime = None
+                logger.success(f"接续被中断的请求: ID:{request.id}, {request.requestType.value}.")
                 return await self._send(request=request,timeout=timeout,ignore=ignore)
             else:
                 # 本地等待超时，非断线原因
                 logger.warning(f'Local call timeout ({timeout}s):{request.to_dict()}')
-                self.exit()
+                await self.exit()
                 raise e
                 
 
     async def __receive(self):
+        print("启动接收任务")
         while True:
             chunk = await self._reader.read(1024)
             if not chunk:
                 raise ConnectionError('Connection closed by server')
             
-            # 心跳检测
-            self._heartbeatTimer.alive()            
+            self._heartbeatTimer.alive()
+            # 心跳检测                      
             if chunk == HeartBeat.PONG.value:
-                # print("PONG")
+                print(f"-PONG: {self._heartbeatTimer.getResponseDelay()}ms")
                 continue
 
             name,message,self._buffer = unpack_data2_utran(chunk, self._buffer)
@@ -460,12 +488,14 @@ class BaseClient:
 
     async def _close(self):
         """# 关闭连接"""
-        try:
-            self._writer.write(b'')
-            await self._writer.drain()
-        except ConnectionResetError as e:
-            pass
-        self._writer.close()
+        if self._writer is not None:
+            try:            
+                self._writer.write(b'')
+                await self._writer.drain()
+            except ConnectionResetError as e:
+                pass
+            self._writer.close()
+
         self._reader = None
         self._writer = None
 
@@ -473,5 +503,6 @@ class BaseClient:
         """# 退出程序
         调用退出时，并不会立即退出，需要等run方法中指定的`main`入口函数执行完毕才会退出。
         """
+        self._topics_handler = None
         self._exitEvent.set()
 
