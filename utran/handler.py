@@ -2,8 +2,6 @@
 
 
 import asyncio
-from multiprocessing import Pool
-
 from utran.object import UtRequest, UtType, UtResponse, UtState, create_UtRequest
 from utran.register import RMethod, Register
 from utran.object import ClientConnection, SubscriptionContainer
@@ -14,7 +12,7 @@ from concurrent.futures import ProcessPoolExecutor
 
 
 
-async def process_request(request:UtRequest,connection:ClientConnection,register:Register,sub_container:SubscriptionContainer,pool:'Pool')->bool:
+async def process_request(request:UtRequest,connection:ClientConnection,register:Register,sub_container:SubscriptionContainer,pool:ProcessPoolExecutor)->bool:
     """# 处理请求总入口
     Args:
         request (UtRequest): 请求体
@@ -51,7 +49,7 @@ async def process_request(request:UtRequest,connection:ClientConnection,register
         return True
 
 
-async def process_multicall_request(request:UtRequest,connection:ClientConnection,register:Register,sub_container:SubscriptionContainer,pool:'Pool'=None)->bool:
+async def process_multicall_request(request:UtRequest,connection:ClientConnection,register:Register,sub_container:SubscriptionContainer,pool:ProcessPoolExecutor=None)->bool:
     """处理multicall请求"""
   
     tasks = []

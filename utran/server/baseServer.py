@@ -1,6 +1,7 @@
 
 from abc import ABC, abstractmethod
 import asyncio
+from concurrent.futures import ProcessPoolExecutor
 
 from utran.register import Register
 from utran.object import SubscriptionContainer
@@ -37,7 +38,7 @@ class BaseServer(ABC):
             limitHeartbeatInterval: int = 1,
             dataEncrypt: bool = False,
             workers:int=0,
-            pool = None) -> None:
+            pool:ProcessPoolExecutor = None) -> None:
 
         self._checkParams = checkParams
         self._checkReturn = checkReturn

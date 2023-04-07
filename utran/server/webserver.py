@@ -1,6 +1,6 @@
 
 import asyncio
-from multiprocessing import Pool
+from concurrent.futures import ProcessPoolExecutor
 import time
 import ujson
 import re
@@ -32,7 +32,7 @@ class WebServer(BaseServer):
                  limitHeartbeatInterval: int = 1, 
                  dataEncrypt: bool = False, 
                  workers: int = 0, 
-                 pool=None) -> None:
+                 pool:ProcessPoolExecutor=None) -> None:
         super().__init__(
             register=register, 
             sub_container=sub_container, 
@@ -49,9 +49,10 @@ class WebServer(BaseServer):
     async def start(self,host: str,port: int,) -> None:
         self._host = host
         self._port = port
+
         # 创建进程池
         if self._workers>0 and self._pool is None:
-            self._pool = Pool(self._workers,maxtasksperchild=100)     # maxtasksperchild 每个子进程最多执行多少个任务后终止并重新创建
+            self._pool = ProcessPoolExecutor(self._workers)
             
         server = web.Server(self.handle_request)
         runner = web.ServerRunner(server)
