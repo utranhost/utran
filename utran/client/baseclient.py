@@ -59,6 +59,13 @@ class HeartBeatTimer:
 
         self._pingTask = self._loop.call_later(self._ping_freq,self.__ping)
 
+    
+    def stop(self):
+        """停止"""
+        self._timeoutTask.cancel()
+        self._pingTask.cancel()
+
+
     def getResponseDelay(self)->float:
         """# 获取响应延迟时间，
         需要在收到服务器Pong响应时调用
@@ -225,6 +232,7 @@ class BaseClient:
         except ConnectionResetError as e:
             logger.error('发送PING时服务器错误，'+str(e))
 
+            
 
 
     async def _ping_timeout(self):
@@ -447,7 +455,7 @@ class BaseClient:
                 
 
     async def __receive(self):
-        print("启动接收任务")
+        # print("启动接收任务")
         while True:
             chunk = await self._reader.read(1024)
             if not chunk:
@@ -503,6 +511,7 @@ class BaseClient:
         """# 退出程序
         调用退出时，并不会立即退出，需要等run方法中指定的`main`入口函数执行完毕才会退出。
         """
+        self._heartbeatTimer.stop()
         self._topics_handler = None
         self._exitEvent.set()
 
