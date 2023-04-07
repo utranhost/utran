@@ -1,9 +1,13 @@
 
+import asyncio
 import inspect
 from functools import partial
+from concurrent.futures import Future, ProcessPoolExecutor
+from typing import Callable, Coroutine, Tuple
 
 from utran.object import BaseDataModel, UtState
-
+from utran.utils import parameter_convert_list
+from utran.log import logger
 
 def allowType(v,t,n):
     """ 
@@ -59,6 +63,25 @@ def cheekType(params:tuple,annotations:dict,args:tuple,dicts:dict={})->tuple:
     return tuple(args),dicts
 
 
+class ResultWapper:
+    __slots__ = ('data','_event')
+    def __init__(self) -> None:
+        self._event = asyncio.Event()
+    
+    async def get_data(self):
+        await self._event.wait()
+        return self.data
+    
+    def executor_done(self,future:Future):
+        print(future.done())
+        result = future.result()
+        self.data = result
+        self._event.set()
+
+def asyncfn_runner(fn:Callable,*args,**kwds):
+    """子进程中的异步执行器"""
+    return asyncio.run(fn(*args,**kwds))
+
 class RMethod:
     """
     #存放注册方法的数据类
@@ -92,20 +115,23 @@ class RMethod:
                  'varargs',
                  'varkw',
                  'returnType',
-                 'asyncfunc')
+                 'asyncfunc',
+                 'useProcess')
 
     def __init__(self,
                  name:str,
                  methodType:str,
                  callable:callable,
                  checkParams:bool,
-                 checkReturn:bool) -> None:
+                 checkReturn:bool,
+                 useProcess:bool=False) -> None:
         """"""
         self.name = name
         self.methodType = methodType
         self.callable = callable
         self.checkParams = checkParams
-        self.checkReturn = checkReturn        
+        self.checkReturn = checkReturn     
+        self.useProcess = useProcess
         self.cls: str = '' if not inspect.ismethod(self.callable) else self.callable.__self__.__class__.__name__
         self.params:tuple = tuple(inspect.signature(self.callable).parameters.keys())        
         self.default_values:tuple= tuple([i.default for i in tuple(inspect.signature(self.callable).parameters.values()) if i.default is not inspect._empty])
@@ -121,14 +147,21 @@ class RMethod:
         self.asyncfunc:bool = inspect.iscoroutinefunction(self.callable)
 
 
-    async def execute(self,args:tuple,dicts:dict)->tuple[UtState,any,str]:
+    async def execute(self,args:tuple,dicts:dict,pool:ProcessPoolExecutor=None)->tuple[UtState,any,str]:
         """ 执行注册的函数或方法
+        Args:
+            args: 列表参数
+            dicts: 字典参数
+            pool: 进程池
+            
         Returns:
             返回值：状态，结果，错误信息
         """
         result = None
         state = UtState.SUCCESS
         error = ''
+
+        # 1.检查参数
         if self.checkParams:
             try:
                 args,dicts = cheekType(self.params,self.annotations,args,dicts)
@@ -137,10 +170,30 @@ class RMethod:
                 error = str(e)
                 return state,result,error
         try:
-            if self.asyncfunc:
-                res = await self.callable(*args,**dicts)
+            # 2.执行注册函数
+            if self.useProcess:
+                # 进程中执行
+                if pool is None: 
+                    logger.error(f'The function "{self.name}" runs in a child process, but the server has no worker process')
+                    raise RuntimeError(f'The function "{self.name}" runs in a child process, but the server has no worker process')
+
+                if self.asyncfunc:
+                    fn = partial(asyncfn_runner,self.callable,*args,**dicts)
+                else:
+                    fn = partial(self.callable,*args,**dicts)
+
+                loop = asyncio.get_event_loop()
+                res = await loop.run_in_executor(pool,fn)
+
             else:
-                res = self.callable(*args,**dicts)
+                if self.asyncfunc:
+                    # 异步执行
+                    res = await self.callable(*args,**dicts)
+                else:
+                    # 正常执行
+                    res = self.callable(*args,**dicts)
+
+            # 3.检查返回值
             if self.checkReturn and self.returnType:
                 try:
                     res= allowType(res,self.returnType,self.name)
@@ -165,17 +218,19 @@ class Register:
     Args:
         checkParams (bool): 调用注册函数或方法时，是否检查参数类型，开启后当类型为数据模型时可以自动转换
         checkReturn (bool): 调用注册函数或方法时，是否检查返回值类型，开启后当类型为数据模型时可以自动转换
-
+        pool: 进程池对象
     注:只有注册函数或方法指定了类型时以上参数才会起作用
     """
-    __slots__ = ('__rpc_methods','__get_methods','__post_methods','__checkParams','__checkReturn')
+    __slots__ = ('__rpc_methods','__get_methods','__post_methods','__checkParams','__checkReturn','_temp_opts','_workers')
 
-    def __init__(self,checkParams:bool=True,checkReturn:bool=True) -> None:
+    def __init__(self,checkParams:bool=True,checkReturn:bool=True,workers:int=0) -> None:
         self.__rpc_methods = dict()     # {method_name:{callable:callable,}}
         self.__get_methods = dict()     # {path:{callable:callable,info:{}}}
         self.__post_methods = dict()    # {path:{callable:callable,info:{}}}
         self.__checkParams = checkParams
         self.__checkReturn = checkReturn
+        self._temp_opts = dict()
+        self._workers = workers
 
     @property
     def methods_of_get(self):
@@ -189,100 +244,164 @@ class Register:
     def methods_of_rpc(self):
         return self.__rpc_methods
     
-    
-    def __call__(self, *args: any, **kwds: any) -> any:
+
+    def __call__(self,useProcess:bool=False)->'Register':
         """# 注册选项
         Args:
             useProcess (bool): 是否使用进程执行
             remote (bool): 是否注册到远程，用于扩充远程服务器
-
         """
+        if not self._workers:
+            raise RuntimeError(f'The server did not specify the number of workers!')
+        self._temp_opts = dict(useProcess=useProcess)
+        return self
 
-    def rpc(self,_f_=None,_n_=None,**opts):
+
+    def rpc(self,_f_=None,_n_=None,**ins_params):
         """# RPC注册
         支持：类/类方法/类实例/函数的注册
 
-        Args:
-            第一个参数 (非固定): 1.装饰器用法时，为注册的名称；2.方法调用时，为类/类方法/类实例/函数
-            第二个参数 (非固定): 注册的名称，只有在方法调用时才有二个参数
-            **opts (可选): 该项只有在给类加装饰器时，用来指定类实例化的参数
+        ## 1.装饰器调用时参数解释 
+          `@register.rpc(参数1,**参数2)`
+        Attributes:
+            参数1 (str): 注册的名称，非`class`为可选，`class`为必填
+            **参数2 (**ins_params):  只有注册`class`时才有这个选项，为类实例化的参数
 
-        支持装饰器用法 @register.rpc
+        注: 注册非`class`或`class`实例时，可支持无参调用 `@register.rpc`
+            
+        ## 2.方法调用时参数解释 
+        `register.rpc(参数1,参数2,**参数3)`
+        Attributes:
+            参数1: 要注册的函数或方法，也可以是`class`或者`class`实例
+            参数2 (str): 注册的名称
+            参数3 (**ins_params): 只有注册`class`时才有这个选项，为类实例化的参数
+
         """  
-        return self._register(_f_,_n_,'rpc',**opts)
+        return self._register(_f_,_n_,'rpc',**ins_params)
 
-    def get(self,_f_=None,_n_=None,**opts):
+    def get(self,_f_=None,_n_=None,**ins_params):
         """# GET注册
 
-        ## 支持装饰器用法:
-        > @register.get("/home")
+        关于名称:
+            名称必须是小写,如非小写会自动转为小写。名称前会加上`/`斜杠，转为路径
 
-        ## 无参数使用:
-        > @register.get
-        > 会将函数名或方法名作为路径使用
+        
+        支持：类/类方法/类实例/函数的注册
+
+        ## 1.装饰器调用时参数解释 
+          `@register.get(参数1,**参数2)`
+        Attributes:
+            参数1 (str): 注册的名称，非`class`为可选，`class`为必填
+            **参数2 (**ins_params):  只有注册`class`时才有这个选项，为类实例化的参数
+
+        注: 注册非`class`或`class`实例时，可支持无参调用 `@register.get`
+            
+        ## 2.方法调用时参数解释 
+        `register.get(参数1,参数2,**参数3)`
+        Attributes:
+            参数1: 要注册的函数或方法，也可以是`class`或者`class`实例
+            参数2 (str): 注册的名称
+            参数3 (**ins_params): 只有注册`class`时才有这个选项，为类实例化的参数
         
         """  
-        return self._register(_f_,_n_,'get',**opts)
+        return self._register(_f_,_n_,'get',**ins_params)
 
-    def post(self,_f_=None,_n_=None,**opts):      
+
+
+    def post(self,_f_=None,_n_=None,**ins_params):      
         """# POST注册
-        > 使用方法：见GET方法
+        关于名称:
+            名称必须是小写,如非小写会自动转为小写。名称前会加上`/`斜杠，转为路径
+
+        支持：类/类方法/类实例/函数的注册
+
+        ## 1.装饰器调用时参数解释 
+          `@register.post(参数1,**参数2)`
+        Attributes:
+            参数1 (str): 注册的名称，非`class`为可选，`class`为必填
+            **参数2 (**ins_params):  只有注册`class`时才有这个选项，为类实例化的参数
+
+        注: 注册非`class`或`class`实例时，可支持无参调用 `@register.post`
+            
+        ## 2.方法调用时参数解释 
+        `register.post(参数1,参数2,**参数3)`
+        Attributes:
+            参数1: 要注册的函数或方法，也可以是`class`或者`class`实例
+            参数2 (str): 注册的名称
+            参数3 (**ins_params): 只有注册`class`时才有这个选项，为类实例化的参数
+
         """   
-        return self._register(_f_,_n_,'post',**opts)
+        return self._register(_f_,_n_,'post',**ins_params)
 
 
-    def _update(self,methodType:str,func:callable,name:str):
+    def _update(self,methodType:str,func:callable,name:str,useProcess:bool=False):
         """更新注册表"""
         if methodType=='rpc':
             if not name[0].isalpha():
-                raise ValueError(f"'{name}' cannot be used as a func'name,must be startwith a letter")
-            self.__rpc_methods[name] = RMethod(name,'RPC',func,self.__checkParams,self.__checkReturn)
+                raise ValueError(f"Registration error,The name '{name}' must start with a letter")
+            self.__rpc_methods[name] = RMethod(name,'RPC',func,self.__checkParams,self.__checkReturn,useProcess=useProcess)
             return
 
         if methodType=='get':
             name = name.replace('.','/')
             if not name.startswith('/'):
-                name='/'+name                
-            self.__get_methods[name] = RMethod(name,'GET',func,self.__checkParams,self.__checkReturn)
+                name='/'+name
+            name_ = name.lower()
+            if name != name_:
+                logger.warning(f'PathName changed,The path "{name}" changes to "{name_}"')
+            self.__get_methods[name_] = RMethod(name_,'GET',func,self.__checkParams,self.__checkReturn,useProcess=useProcess)
             return
 
         if methodType=='post':
             name = name.replace('.','/')
             if not name.startswith('/'):
                 name='/'+name
-            self.__post_methods[name] = RMethod(name,'POST',func,self.__checkParams,self.__checkReturn)
+            name_ = name.lower()
+            if name != name_:
+                logger.warning(f'PathName changed,The path "{name}" changes to "{name_}"')            
+            self.__post_methods[name_] = RMethod(name_,'POST',func,self.__checkParams,self.__checkReturn,useProcess=useProcess)
             return
 
 
-    def _register(self,_f_=None,_n_=None,_t_:str=None,**opts):
+    def _register(self,_f_=None,_n_=None,_t_:str=None,**ins_params):
         """通用注册，支持注册函数，类（自动实例化），类实例，"""
         if _f_ is None:
-            return partial(self._register, _n_=_n_,_t_=_t_,**opts)
+            return partial(self._register, _n_=_n_,_t_=_t_,**ins_params)
         
         if type(_f_)==str:
             _n_ = _f_.strip()
             # if _n_ and _n_[0].isalpha():
             if _n_:
-                return partial(self._register,_n_=_n_,_t_=_t_,**opts)
+                return partial(self._register,_n_=_n_,_t_=_t_,**ins_params)
             else:
-                raise ValueError(f"'{_f_}' cannot be used as a registered name!")
+                raise ValueError(f"Registration error,'{_f_}' cannot be used as a registered name!")
             
+        useProcess = bool(self._temp_opts.get('useProcess'))
+        self._temp_opts = dict()  # 清空临时选项
         if inspect.isfunction(_f_) or inspect.ismethod(_f_):
             if not _n_:
                 _n_ = _f_.__name__
-            self._update(_t_,_f_,_n_)
+            
+            self._update(_t_,_f_,_n_,useProcess=useProcess)
         elif inspect.ismodule(_f_):
-            raise ValueError(f"'{_f_.__name__} 'module could not be registered!")
+            raise ValueError(f"Registration error,module '{_f_.__name__}' could not be registered!")
         else:
+            # 注册class
             if not _n_:
-                raise ValueError(f"The name is required!")
+                if inspect.isclass(_f_):
+                    raise ValueError(f"Registration error,The '{_f_.__name__}' class is not named!")
+                else:
+                    
+                    raise ValueError(f"Registration error,The '{type(_f_).__name__}' instance is not named!")
+                
             if type(_n_)!=str:
-                raise ValueError(f"The name '{_n_}' is not a string!")
+                raise ValueError(f"Registration error,The name '{_n_}' is not a string!")
             
             if inspect.isclass(_f_):
-                _instance = _f_(**opts)
+                _instance = _f_(**ins_params)
             else:
                 _instance = _f_
+
 
             for i in dir(_instance):
                 if i.startswith("_"):
@@ -290,5 +409,5 @@ class Register:
                 _f = getattr(_instance,i)
                 if inspect.ismethod(_f) or inspect.isfunction(_f):
                     method_name = f'{_n_}.{i}'
-                    self._update(_t_,_f,method_name)
+                    self._update(_t_,_f,method_name,useProcess=useProcess)
         return _f_
