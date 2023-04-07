@@ -3,27 +3,42 @@ from typing import Coroutine, Union
 from utran.client.baseclient import BaseClient
 from utran.utils import parse_utran_uri
 
-
-
-class RPCProxy:
-    """代理远程调用"""
-    def __init__(self,bsclient:BaseClient):
-        self._temp_opts = dict()
-        self._bsclient = bsclient
-        self._loop = asyncio.get_event_loop()
+class ExeProxy:
+    """远程执行代理"""
+    
+    def __init__(self,accessProxy:'AccessProxy'):
+        self._loop_ = asyncio.get_event_loop()
+        self._accessProxy_ = accessProxy
 
     def __getattr__(self, methodName):
-        def wrapper(*args, **dicts):
-            f = self._bsclient.call(methodName=methodName,args=args,dicts=dicts,**self._temp_opts)
-            if self._bsclient._isRuning:
-                return asyncio.create_task(f)
+        """类的访问"""
+        self._accessProxy_.__getattr__(self._accessProxy_._temp_name_+'.'+methodName)
+        return self
+    
+    def __call__(self, *args: any, **dicts: any) -> any:
+        """执行远程函数"""
+        f = self._accessProxy_._bsclient_.call(methodName=self._accessProxy_._temp_name_,args=args,dicts=dicts,**self._accessProxy_._temp_opts_)
+        if self._accessProxy_._bsclient_._isRuning:
+            return asyncio.create_task(f)
+        else:
+            if self._accessProxy_._temp_opts_.get('multicall'):
+                return f
             else:
-                if self._temp_opts.get('multicall'):
-                    return f
-                else:
-                    res = self._loop.run_until_complete(self._bsclient.start(main=f))
-                    return res
-        return wrapper
+                res = self._loop_.run_until_complete(self._accessProxy_._bsclient_.start(main=f))
+                return res
+
+
+class AccessProxy:
+    """访问代理"""
+    def __init__(self,bsclient:BaseClient):
+        self._temp_opts_ = dict()
+        self._temp_name_:str = ''
+        self._bsclient_ = bsclient
+        self._exeProxy_ = ExeProxy(self)
+
+    def __getattr__(self, methodName):
+        self._temp_name_ = methodName
+        return self._exeProxy_
 
 
     def __call__(self,*,timeout:int=None,encrypt:bool=None, ignore:bool=None,multicall:bool=False):
@@ -34,9 +49,9 @@ class RPCProxy:
             ignore: 是否忽略远程执行结果的错误，忽略错误则值用None填充，默认为为client实例化的值
             multicall: 是否标记为合并调用
         """
-        self._temp_opts = dict(timeout= self._bsclient._localTimeout if timeout==None else timeout,
-                          encrypt= self._bsclient._encrypt if timeout==None else encrypt,
-                          ignore = self._bsclient._ignore if ignore==None else ignore,
+        self._temp_opts_ = dict(timeout= self._bsclient_._localTimeout if timeout==None else timeout,
+                          encrypt= self._bsclient_._encrypt if timeout==None else encrypt,
+                          ignore = self._bsclient_._ignore if ignore==None else ignore,
                           multicall = multicall)
         return self
 
@@ -86,12 +101,14 @@ class Client:
                                                host=self._serveHost,
                                                port=self._servePort)
 
-        self._proxy = RPCProxy(self._bsclient)
+        self._proxy = AccessProxy(self._bsclient)
         
 
     def __call__(self, *args: any,**opts: any) -> callable:
+        """指定入口函数，可以使用装饰器方式指定入口函数"""
         return self._bsclient(*args,**opts)
     
+
     async def start(self,main:Union[asyncio.Future,Coroutine]=None,uri:str=None,host:str=None,port:int=None):
         host = host or self._serveHost
         port = port or self._servePort
@@ -140,7 +157,7 @@ class Client:
 
 
     @property
-    def call(self)->RPCProxy:
+    def call(self)->AccessProxy:
         """远程调用
         支持同步和异步的调用，
                 同步调用方式会：1自动建立连接 -- 2任务执行完毕 --3自动关闭连接，适用于未建立连接时使用。
