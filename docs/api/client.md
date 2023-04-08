@@ -4,7 +4,7 @@
 ## 【客户端】
 
 #### 同步调用 
-这是一种简便的调用方式，大量任务时并不高效，它每次调用都会建立连接和关闭连接
+这是一种简便的调用方式，它每次调用都会建立连接和关闭连接，不支持订阅
 ```python title='使用示例1'
 import utran
 from utran.client.client import Client

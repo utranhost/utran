@@ -43,7 +43,7 @@ watch: # Live-reload para os mais íntimos - mais informações abaixo também
 
 #导航栏
 nav:
-  - 介绍: index.md
+  - 入门: index.md
   - 模块:
     - application: api/application.md
     - server: api/server.md

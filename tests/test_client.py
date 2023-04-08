@@ -32,18 +32,18 @@ async def main():
     res = await client.call('add0',dicts=dict(a=0,b=2),timeout=300000)
     print(res)
 
-    # res = await asyncio.gather(client.call('add',dicts=dict(a=0,b=1),timeout=5,ignore=False),
-    #                client.call('add511',dicts=dict(a=0,b=1),timeout=5000000000000,ignore=True),
-    #                client.call('add',dicts=dict(a=0,b=1),timeout=5),
-    #                client.call('add511',dicts=dict(a=0,b=1),timeout=5,ignore=True),
-    #                client.call('add',dicts=dict(a=0,b=1),timeout=5),
-    #                client.call('add',dicts=dict(a=0,b=1),timeout=5,ignore=False),
-    #                client.call('add511',dicts=dict(a=0,b=1),timeout=5,ignore=True),
-    #                client.call('add',dicts=dict(a=0,b=1),timeout=5),
-    #                client.call('add511',dicts=dict(a=0,b=1),timeout=5,ignore=True),
-    #                client.call('add',dicts=dict(a=0,b=1),timeout=1000000000000000000000000000)
-    #                )
-    # print(res)
+    res = await asyncio.gather(client.call('add',dicts=dict(a=0,b=1),timeout=5,ignore=False),
+                   client.call('add511',dicts=dict(a=0,b=1),timeout=5000000000000,ignore=True),
+                   client.call('add',dicts=dict(a=0,b=1),timeout=5),
+                   client.call('add511',dicts=dict(a=0,b=1),timeout=5,ignore=True),
+                   client.call('add',dicts=dict(a=0,b=1),timeout=5),
+                   client.call('add',dicts=dict(a=0,b=1),timeout=5,ignore=False),
+                   client.call('add511',dicts=dict(a=0,b=1),timeout=5,ignore=True),
+                   client.call('add',dicts=dict(a=0,b=1),timeout=5),
+                   client.call('add511',dicts=dict(a=0,b=1),timeout=5,ignore=True),
+                   client.call('add',dicts=dict(a=0,b=1),timeout=1000000000000000000000000000)
+                   )
+    print(res)
 
     res:list = await client.multicall(client.call('add',args=[0,2],multicall=True),
                                     client.call('add',dicts=dict(a=1,b=2),multicall=True),
@@ -70,6 +70,6 @@ async def main():
     # print(asyncio.all_tasks())
     res = await client.subscribe(['good7','study7'],on_topic)
     print(res)
-    # await client.exit()
+    await client.exit()
 
 utran.run(client,uri='utran://127.0.0.1:8081')

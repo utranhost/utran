@@ -1,13 +1,13 @@
 import asyncio
+from functools import partial
 from typing import Coroutine, Union
 from utran.client.baseclient import BaseClient
 from utran.utils import parse_utran_uri
 
 class ExeProxy:
     """远程执行代理"""
-    
+    __slots__ = ('_accessProxy_',)
     def __init__(self,accessProxy:'AccessProxy'):
-        self._loop_ = asyncio.get_event_loop()
         self._accessProxy_ = accessProxy
 
     def __getattr__(self, methodName):
@@ -15,21 +15,32 @@ class ExeProxy:
         self._accessProxy_.__getattr__(self._accessProxy_._temp_name_+'.'+methodName)
         return self
     
-    def __call__(self, *args: any, **dicts: any) -> any:
-        """执行远程函数"""
-        f = self._accessProxy_._bsclient_.call(methodName=self._accessProxy_._temp_name_,args=args,dicts=dicts,**self._accessProxy_._temp_opts_)
+    def __call__(self, *args: any, **dicts: any) -> Union[any,asyncio.Task,dict]:
+        """# 执行远程函数
+
+        Returns:
+            返回值 (dict): 当选项标记为multicall时: `client.call(multicall=True).add(1,2)`         
+            返回值 (asyncio.Task): 当baseclient已经运行时，`client.call.add(1,2)` 返回Task。可使用await拿到调用结果，例: `await client.call.add(1,2)`
+            返回值 (any): 当baseclient未运行时，`client.call.add(1,2)`返回最终的调用结果
+        """
+        f:Union[Coroutine,dict] = self._accessProxy_._bsclient_.call(methodName=self._accessProxy_._temp_name_,args=args,dicts=dicts,**self._accessProxy_._temp_opts_)
         if self._accessProxy_._bsclient_._isRuning:
+            # f is coroutine
             return asyncio.create_task(f)
-        else:
+        else: 
             if self._accessProxy_._temp_opts_.get('multicall'):
+                # f is dict
                 return f
             else:
-                res = self._loop_.run_until_complete(self._accessProxy_._bsclient_.start(main=f))
+                # f is coroutine
+                loop = asyncio.get_event_loop()
+                res = loop.run_until_complete(self._accessProxy_._bsclient_.start(main=f))
                 return res
 
 
 class AccessProxy:
     """访问代理"""
+    __slots__ = ('_temp_opts_','_temp_name_','_bsclient_','_exeProxy_')
     def __init__(self,bsclient:BaseClient):
         self._temp_opts_ = dict()
         self._temp_name_:str = ''
@@ -39,7 +50,6 @@ class AccessProxy:
     def __getattr__(self, methodName):
         self._temp_name_ = methodName
         return self._exeProxy_
-
 
     def __call__(self,*,timeout:int=None,encrypt:bool=None, ignore:bool=None,multicall:bool=False):
         """# 设置调用选项
@@ -89,30 +99,39 @@ class Client:
 
         self._serveHost:str = host                                      # 服务器host 
         self._servePort:int = port                                      # 服务器端口号
+        self._bsclient:BaseClient = None
 
         if uri:
             self._serveHost,self._servePort = parse_utran_uri(uri)
 
-        # 基础客户端
-        self._bsclient:BaseClient = BaseClient(heartbeatFreq=heartbeatFreq,
-                                               serverTimeout=serverTimeout,
-                                               reconnectNum=reconnectNum,
-                                               encrypt=encrypt,
-                                               host=self._serveHost,
-                                               port=self._servePort)
-
-        self._proxy = AccessProxy(self._bsclient)
         
 
     def __call__(self, *args: any,**opts: any) -> callable:
         """指定入口函数，可以使用装饰器方式指定入口函数"""
+        self._bsclient:BaseClient = self._bsclient or BaseClient(heartbeatFreq=self._heartbeatFreq,
+                                                                serverTimeout=self._serverTimeout,
+                                                                reconnectNum=self._reconnectNum,
+                                                                encrypt=self._encrypt,
+                                                                host=self._serveHost,
+                                                                port=self._servePort)
+
         return self._bsclient(*args,**opts)
     
 
     async def start(self,main:Union[asyncio.Future,Coroutine]=None,uri:str=None,host:str=None,port:int=None):
         host = host or self._serveHost
         port = port or self._servePort
+                # 基础客户端
+        self._bsclient:BaseClient = self._bsclient or BaseClient(heartbeatFreq=self._heartbeatFreq,
+                                                                serverTimeout=self._serverTimeout,
+                                                                reconnectNum=self._reconnectNum,
+                                                                encrypt=self._encrypt,
+                                                                host=self._serveHost,
+                                                                port=self._servePort)
+
+        self._proxy = AccessProxy(self._bsclient)
         await self._bsclient.start(main=main,uri=uri,host=host,port=port)
+
 
     @property
     def subscribe(self)->BaseClient.subscribe:
@@ -166,5 +185,14 @@ class Client:
         Returns:
             返回远程调用的代理类
         """
+        if self._bsclient is None or  not self._bsclient._isRuning:
+            self._bsclient:BaseClient = BaseClient(heartbeatFreq=self._heartbeatFreq,
+                                                    serverTimeout=self._serverTimeout,
+                                                    reconnectNum=self._reconnectNum,
+                                                    encrypt=self._encrypt,
+                                                    host=self._serveHost,
+                                                    port=self._servePort)
+            self._proxy = AccessProxy(self._bsclient)
+
         return self._proxy
         

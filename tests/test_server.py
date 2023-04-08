@@ -23,14 +23,14 @@ async def add(a:int,b:int):
     await asyncio.sleep(1)
     return a+b
 
-@server.register(useProcess=True).get
-@server.register(useProcess=True).rpc
+@server.register.get(useProcess=True)
+@server.register.rpc(useProcess=True)
 async def add0(a:int,b:int):
     # await asyncio.sleep(3)
     return a+b
 
-@server.register.get('/myclass',a=3,b=2)
-@server.register(useProcess=True).rpc('myclass',a=1,b=2)
+@server.register.get('/myclass',ins_kwds=dict(a=3,b=2),useProcess=True)
+@server.register.rpc('myclass',ins_args=(1,3),useProcess=True)
 class Myclass:
     def __init__(self,a,b) -> None:
         self.a = a

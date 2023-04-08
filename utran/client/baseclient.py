@@ -5,7 +5,7 @@ from functools import partial
 import inspect
 import time
 
-from typing import Union,Callable,Coroutine
+from typing import Any, Union,Callable,Coroutine
 import ujson
 from utran.log import logger
 from utran.client.que import ResultQueue
@@ -62,8 +62,11 @@ class HeartBeatTimer:
     
     def stop(self):
         """停止"""
-        self._timeoutTask.cancel()
-        self._pingTask.cancel()
+        if self._timeoutTask:
+            self._timeoutTask.cancel()
+
+        if self._pingTask:
+            self._pingTask.cancel()
 
 
     def getResponseDelay(self)->float:
@@ -165,7 +168,7 @@ class BaseClient:
         self._isRuning = False                                          # 是否运行中
         self._curSendTask:asyncio.Task = None
 
-    async def start(self,main:Union[Future,Coroutine]=None,uri:str=None,host:str=None,port:int=None):
+    async def start(self,main:Union[Future,asyncio.Task,Coroutine,Callable]=None,uri:str=None,host:str=None,port:int=None):
         """# 启动连接
         存在订阅的话题时，程序会一直等待话题的推送，无订阅话题时程序在执行完入口函数`main`后自动退出
         Args:
@@ -184,33 +187,36 @@ class BaseClient:
         self._reader, self._writer = await asyncio.open_connection(self._serveHost, self._servePort)
         self._receive_task = asyncio.create_task(self.__receive())  
         self._heartbeatTimer = self._heartbeatTimer or HeartBeatTimer(self._ping,self._ping_timeout,self._heartbeatFreq,self._serverTimeout)
-        
+        self._exitEvent.clear()
+
         self._isRuning = True
         if asyncio.iscoroutine(main):
-            result = await main            
-            self._receive_task.cancel()
-            self._isRuning = False
-            await self._close()            
+            # 同步单次调用模式
+            try:
+                result = await main
+            finally:
+                self._receive_task.cancel()
+                self._isRuning = False
+                await self._close()            
             return result
 
-        if asyncio.iscoroutinefunction(main):
+        elif asyncio.iscoroutinefunction(main):
+            # 异步服务模式
             self._main_task = asyncio.create_task(main())
+            try:
+                await self._main_task
+                if self._topics_handler: logger.info('主函数执行完毕,持续等待订阅推送..')
+                if not self._topics_handler:
+                    await self.exit()
+                else:
+                    self._heartbeatTimer.alive()
+                    await self._exitEvent.wait()                
+            finally:
+                await self.exit()
+        else:
+            await self.exit()
+            raise ValueError(f'The entry object "main" must be coroutinefunction,Coroutine or Future,Task')
 
-        try:
-            await self._main_task
-            if self._topics_handler: logger.info('主函数执行完毕,持续等待订阅推送..')
-            self._heartbeatTimer.alive()
-        except Exception as e:
-            self._exitEvent.set()
-            raise e
-
-        if not self._topics_handler:
-            self._exitEvent.set()
-
-        await self._exitEvent.wait()
-        self._receive_task.cancel()
-        self._isRuning = False
-        await self._close()
         
 
     def __call__(self, *args: any, **opts: any) -> callable:
@@ -358,7 +364,7 @@ class BaseClient:
                    timeout:int=None,
                    multicall:bool=False,
                    encrypt:bool=None,
-                   ignore:bool=None)->Union[UtResponse,dict]:
+                   ignore:bool=None)->Union[Any,dict]:
         """# 调用远程方法或函数
         Args:
             methodName: 远程的方法或函数的名称
@@ -504,6 +510,7 @@ class BaseClient:
                 pass
             self._writer.close()
 
+        self._heartbeatTimer.stop()
         self._reader = None
         self._writer = None
 
@@ -511,7 +518,9 @@ class BaseClient:
         """# 退出程序
         调用退出时，并不会立即退出，需要等run方法中指定的`main`入口函数执行完毕才会退出。
         """
-        self._heartbeatTimer.stop()
         self._topics_handler = None
+        self._receive_task.cancel()
+        self._isRuning = False
+        await self._close()
         self._exitEvent.set()
 
