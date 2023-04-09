@@ -7,7 +7,7 @@ os.sys.path.append(os.path.abspath('../'))
 import utran
 from utran.client.client import Client
 
-client = Client()
+client = utran.Client(uri='utran://127.0.0.1:8081')
 
 def on_topic(msg,topic):
     print(f"{topic}：",msg)
@@ -46,4 +46,3 @@ async def main():
     print(res)
     # await client.exit()
 
-utran.run(client)

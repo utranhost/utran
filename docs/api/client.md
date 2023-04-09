@@ -3,9 +3,9 @@
 
 ## 【客户端】
 
-#### 同步调用 
-这是一种简便的调用方式，它每次调用都会建立连接和关闭连接，不支持订阅
-```python title='使用示例1'
+#### 简单调用 （同步）
+这是一种简便的使用方式，它每次调用都会建立连接和关闭连接，且不支持订阅
+```python title='使用示例3'
 import utran
 from utran.client.client import Client
 
@@ -14,22 +14,41 @@ client = Client(uri='utran://127.0.0.1:8081')
 res = client.call.add(1,2)
 print(res)
 
-res = client.call.add(1454,2)
-print(res)
-
 res:list = client.multicall(client.call(multicall=True).add(1,2),
                             client.call(multicall=True).add(2,2),
                             ignore=True)
 print(res)
 
 ```
-#### 异步调用
-这是一种高效的调用方式，只需建立一次连接完成所有任务，支持订阅
+#### 指定入口调用 （同步）
+在main函数执行完毕后，如果有订阅的会自动等待推送，订阅为空时会自动退出
+```python title='使用示例1'
+import utran
+from utran.client.client import Client
+
+client = Client(uri='utran://127.0.0.1:8081')
+
+@client
+def main():
+    res = client.subscribe(['good','study'],lambda msg,topic:print(msg,topic))
+    print(res)
+
+    res = client.call(ignore=True).ad0d(1,2)
+    print(res)
+
+    res = client.call.add(1,5)
+    print(res)
+
+    res = client.unsubscribe(*['good','study'])
+    print(res)
+```
+#### 指定入口调用 （异步）
+这是一种高效的异步使用方式，支持订阅
 ```python title='使用示例2'
 import utran
 from utran.client.client import Client
 
-client = Client()
+client = Client(uri='utran://127.0.0.1:8081')
 
 @client
 async def main():
@@ -46,8 +65,29 @@ async def main():
     print(res)
 
 
-utran.run(client,uri='utran://127.0.0.1:8081')
 ```
+#### 使用with关键 （同步）
+使用逻辑与指定入口的方式一致
+```python title='使用示例2'
+import utran
+from utran.client.client import Client
+
+with Client(uri='utran://127.0.0.1:8081') as client:
+    res = client.subscribe(['good','study'],lambda msg,topic:print(msg,topic))
+    print(res)
+
+    res = client.call.add0(6,5)
+    print(res)
+
+    res = client.call.add0(1,2)
+    print(res)
+
+    res = client.unsubscribe(*['good','study'])
+    print(res)
+```
+
+
+
 :::utran.client.client
 
 

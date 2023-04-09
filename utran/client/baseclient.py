@@ -225,9 +225,20 @@ class BaseClient:
             return result
     
 
-    def hasSubscribe(self)->tuple:
-        """返回已经订阅了话题"""
-        return tuple(self._topics_handler.keys())
+    def hasSubscribe(self,returnTopics:bool=True)->Union[tuple,bool]:
+        """# 是否有订阅话题
+        Args:
+            returnTopics: 是否返回已订阅的话题
+        
+        Returns:
+            当returnTopics为True时返回值为tuple，否则返回 bool值            
+        """
+        if returnTopics:
+            return tuple(self._topics_handler.keys())
+        if self._topics_handler:
+            return True
+        else:
+            return False
 
 
     def __call__(self, *args: any, **opts: any) -> callable:
@@ -360,7 +371,10 @@ class BaseClient:
         msg = dict(requestType=UtType.UNSUBSCRIBE.value,topics=topic)
         request:UtRequest = create_UtRequest(msg)
         res = await self._send(request,timeout=timeout,ignore=ignore)
-        if not self._topics_handler:logger.debug('已无任何订阅.')
+        if not self._topics_handler:
+            logger.debug('已无任何订阅,程序即将退出..')
+            self._exitEvent.set()
+
         return res
         
 
@@ -529,8 +543,6 @@ class BaseClient:
         """# 退出程序
         调用退出时，并不会立即退出，需要等run方法中指定的`main`入口函数执行完毕才会退出。
         """
-        # if self._main_task:
-        #     self._main_task.cancel()
         self._isRuning = False
         self._topics_handler = None        
         await self._close()
