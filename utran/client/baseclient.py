@@ -163,20 +163,22 @@ class BaseClient:
         self._reconnectingEvent.set()               # 默认关闭等待
         self._lastReconectTime:float = None                             # 最后一次重连时间
         self._main_task:asyncio.Task = None
-        self._main:callable = None
+        self._main:Union[Future,Coroutine,Callable] = None
         self._ignore = ignore                                           # 是否忽略远程调用异常
         self._isRuning = False                                          # 是否运行中
         self._curSendTask:asyncio.Task = None
 
-    async def start(self,main:Union[Future,asyncio.Task,Coroutine,Callable]=None,uri:str=None,host:str=None,port:int=None):
+    async def start(self,main:Union[Future,Coroutine,Callable]=None,uri:str=None,host:str=None,port:int=None,runforever:bool=False):
         """# 启动连接
         存在订阅的话题时，程序会一直等待话题的推送，无订阅话题时程序在执行完入口函数`main`后自动退出
-        Args:
-            uri: 服务器地址
-            main:入口函数，这是一个协程对象或Future对象
+        Args:            
+            main:入口函数，这是一个可等待对象，它可以是协程函数、协程对象或Future对象,
+            uri: 服务器地址 例：`utran://127.0.0.1:8081`
+            host: 不使用uri时可以直接指定服务器的host和port
+            port: 不使用uri时可以直接指定服务器的host和port
+            runforever: 是否一直运行,默认入口函数执行完毕且无任何订阅时会自动退出
         """
-        main = main or self._main
-        assert main,ValueError('No entry function or method was specified')
+        self._main = main or self._main
         self._serveHost = host or self._serveHost
         self._servePort = port or self._servePort
         if uri:
@@ -185,39 +187,48 @@ class BaseClient:
         assert self._serveHost and self._servePort,ValueError('Specify the correct host and port.')
 
         self._reader, self._writer = await asyncio.open_connection(self._serveHost, self._servePort)
+        logger.debug(f"启动连接，{self._serveHost}:{self._servePort}")
         self._receive_task = asyncio.create_task(self.__receive())  
         self._heartbeatTimer = self._heartbeatTimer or HeartBeatTimer(self._ping,self._ping_timeout,self._heartbeatFreq,self._serverTimeout)
         self._exitEvent.clear()
 
         self._isRuning = True
-        if asyncio.iscoroutine(main):
-            # 同步单次调用模式
-            try:
-                result = await main
-            finally:
-                self._receive_task.cancel()
-                self._isRuning = False
-                await self._close()            
-            return result
 
-        elif asyncio.iscoroutinefunction(main):
-            # 异步服务模式
-            self._main_task = asyncio.create_task(main())
-            try:
-                await self._main_task
-                if self._topics_handler: logger.info('主函数执行完毕,持续等待订阅推送..')
-                if not self._topics_handler:
-                    await self.exit()
+        result = None
+        try:
+            if self._main:
+                if asyncio.iscoroutine(self._main) or asyncio.isfuture(self._main):
+                    # 同步单次调用模式
+                    self._main_task = asyncio.create_task(main)
+                    result = await self._main_task
+                elif asyncio.iscoroutinefunction(self._main):
+                    # 异步服务模式
+                    self._main_task = asyncio.create_task(self._main())
+                    result = await self._main_task
                 else:
-                    self._heartbeatTimer.alive()
-                    await self._exitEvent.wait()                
-            finally:
-                await self.exit()
-        else:
-            await self.exit()
-            raise ValueError(f'The entry object "main" must be coroutinefunction,Coroutine or Future,Task')
+                    raise ValueError(f'The "{type(self._main)}" cannot be an entry object ,must be coroutinefunction,Coroutine or Future')        
+                logger.debug('主函数执行完毕.')
 
-        
+            if runforever:
+                # __enter__进入
+                await self._exitEvent.wait()
+            else:
+                if self._topics_handler:
+                    logger.debug('持续等待订阅推送..')
+                    self._heartbeatTimer.alive()
+                    await self._exitEvent.wait()
+                else:
+                    logger.debug('无订阅,程序即将退出')
+
+        finally:
+            await self.exit()
+            return result
+    
+
+    def hasSubscribe(self)->tuple:
+        """返回已经订阅了话题"""
+        return tuple(self._topics_handler.keys())
+
 
     def __call__(self, *args: any, **opts: any) -> callable:
         """# 指定入口函数，可以使用装饰器方式指定入口函数
@@ -238,8 +249,6 @@ class BaseClient:
         except ConnectionResetError as e:
             logger.error('发送PING时服务器错误，'+str(e))
 
-            
-
 
     async def _ping_timeout(self):
         """服务器响应超时，该方法会被执行"""
@@ -255,8 +264,7 @@ class BaseClient:
         while n>0:
             if n<=12:logger.error(f"剩余{n}次重连..")
             await self._close()
-            try:
-                self._receive_task.cancel()
+            try:                
                 self._reader, self._writer = await asyncio.open_connection(self._serveHost, self._servePort)
                 logger.success(f"重连成功")
                 self._lastReconectTime = time.time()
@@ -346,13 +354,13 @@ class BaseClient:
         |---------|-----------|
         |所有已订阅的话题 `list`|本次取消订阅的话题 `list`|
         """
-        [self._topics_handler.pop(t) for t in topic if t in self._topics_handler]              
-
+        if topic:
+            [self._topics_handler.pop(t) for t in topic if t in self._topics_handler]              
 
         msg = dict(requestType=UtType.UNSUBSCRIBE.value,topics=topic)
         request:UtRequest = create_UtRequest(msg)
         res = await self._send(request,timeout=timeout,ignore=ignore)
-        if not self._topics_handler:logger.warning('已无任何订阅.')
+        if not self._topics_handler:logger.debug('已无任何订阅.')
         return res
         
 
@@ -502,6 +510,9 @@ class BaseClient:
 
     async def _close(self):
         """# 关闭连接"""
+        self._receive_task.cancel()
+        self._heartbeatTimer.stop()
+
         if self._writer is not None:
             try:            
                 self._writer.write(b'')
@@ -510,17 +521,17 @@ class BaseClient:
                 pass
             self._writer.close()
 
-        self._heartbeatTimer.stop()
         self._reader = None
         self._writer = None
+
 
     async def exit(self):
         """# 退出程序
         调用退出时，并不会立即退出，需要等run方法中指定的`main`入口函数执行完毕才会退出。
         """
-        self._topics_handler = None
-        self._receive_task.cancel()
+        # if self._main_task:
+        #     self._main_task.cancel()
         self._isRuning = False
+        self._topics_handler = None        
         await self._close()
         self._exitEvent.set()
-
