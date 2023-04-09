@@ -6,6 +6,7 @@ import time
 from typing import Callable, Coroutine, Union
 from utran.client.baseclient import BaseClient
 from utran.utils import parse_utran_uri
+import inspect
 
 class ExeProxy:
     """远程执行代理"""
@@ -126,9 +127,28 @@ class Client:
 
     def __call__(self, *args: any,**opts: any) -> callable:
         """指定入口函数，可以使用装饰器方式指定入口函数"""
+        if len(args)==0:
+            return partial(self.__call__,**opts)
         
-        return self._bsclient(*args,**opts)
-    
+        if inspect.iscoroutinefunction(args[0]):
+            asyncio.run(self._bsclient.start(main=args[0](),host=self._serveHost,port=self._servePort))
+  
+        elif inspect.isfunction(args[0]) or inspect.ismethod(args[0]):
+            self.__enter__()
+            try:
+                args[0]()
+            finally:
+                while True:
+                    if not self._bsclient._isRuning:
+                        break
+                    if not self._bsclient.hasSubscribe(returnTopics=False):
+                        _ = asyncio.run_coroutine_threadsafe(self._bsclient.exit(),self._enterLoop)
+                        _.result()
+                        break
+                    time.sleep(1)
+
+                self.__exit__(None,None,None)
+
 
     async def start(self,main:Union[Future,Coroutine,Callable]=None,uri:str=None,host:str=None,port:int=None,runforever:bool=False):
         """# 启动连接
@@ -147,25 +167,65 @@ class Client:
         await self._bsclient.start(main=main,uri=uri,host=host,port=port,runforever=runforever)
 
 
-    @property
-    def subscribe(self)->BaseClient.subscribe:
-        """订阅
-        异步方法
+    def subscribe(self,
+                topic:Union[str,tuple[str]],
+                callback:callable,
+                *,
+                timeout:int=None,
+                ignore:bool=None)->Union[Coroutine,dict]:
+        """# 订阅话题
+        支持同步和异步的调用，
+        存在订阅的话题时，程序会一直等待话题的推送，无订阅话题时程序在执行完入口函数`main`后自动退出
+        
+        Args:
+            topic: 话题
+            callback: 回调函数，有两个参数 msg,topic。支持异步和同步回调函数, 
+            timeout: 本地等待响应超时，抛出TimeoutError错误（单位：秒）
+            ignore: 是否忽略远程执行结果的错误，忽略错误则值用None填充
+        
         Returns:
-            返回订阅方法
+            {'allTopics': ['topic1','topic2'], 'subTopics': ['topic2']}
+        
+        |allTopics|subTopics|
+        |---------|-----------|
+        |所有已订阅的话题 `list`|本次订阅的话题 `list`|
         """
-        return self._bsclient.subscribe
+        coro = self._bsclient.subscribe(topic=topic,callback=callback,timeout=timeout,ignore=ignore)
+        if self._enterLoop:
+            futrue = asyncio.run_coroutine_threadsafe(coro,self._enterLoop)
+            return futrue.result()
+
+        else:
+            return coro
     
 
-    @property
-    def unsubscribe(self)->BaseClient.unsubscribe:
-        """订阅
-        异步方法
+    def unsubscribe(self,
+                    *topic:str,
+                    timeout:int=None,
+                    ignore:bool=None)->Union[Coroutine,dict]:
+        """# 取消订阅话题
+        支持同步和异步的调用，
+        存在订阅的话题时，程序会一直等待话题的推送，无订阅话题时程序在执行完入口函数`main`后自动退出
+        Args:
+            topic: 话题
+            timeout: 本地等待响应超时，抛出TimeoutError错误（单位：秒）
+            ignore: 是否忽略远程执行结果的错误，忽略错误则值用None填充
+
         Returns:
-            返回取消订阅方法
+            {'allTopics': ['topic1'], 'unSubTopics': ['topic2']}   
+
+        |allTopics|unSubTopics|
+        |---------|-----------|
+        |所有已订阅的话题 `list`|本次取消订阅的话题 `list`|
         """
-        return self._bsclient.unsubscribe
+        coro = self._bsclient.unsubscribe(*topic,timeout=timeout,ignore=ignore)
+        if self._enterLoop:
+            futrue = asyncio.run_coroutine_threadsafe(coro,self._enterLoop)
+            return futrue.result()
+        else:
+            return coro
     
+
 
     def multicall(self,*calls:Coroutine,encrypt:bool = False,timeout:int=None,ignore:bool=None)->list:
         """# 合并多次调用远程方法或函数
@@ -188,11 +248,18 @@ class Client:
             _loop = asyncio.get_event_loop()
             return _loop.run_until_complete(self._bsclient.start(main=f))
 
-    @property
+
     def exit(self):
-        """退出程序"""
-        if self._bsclient:
-            return self._bsclient.exit
+        """# 退出程序
+        支持同步和异步的调用，
+        """
+        coro = self._bsclient.exit()
+        if self._enterLoop:
+            futrue = asyncio.run_coroutine_threadsafe(coro,self._enterLoop)
+            return futrue.result()
+        else:
+            return coro
+        
 
     @property
     def call(self)->AccessProxy:
@@ -208,9 +275,7 @@ class Client:
         return self._proxy
     
 
-    def __enter__(self):
-
-        
+    def __enter__(self):        
         self._enterLoop = asyncio.new_event_loop()
         def worker(loop:asyncio.AbstractEventLoop):
             loop.run_until_complete(self._bsclient.start(runforever=True))
@@ -230,9 +295,9 @@ class Client:
             if exc_type:
                 raise exc_type(exc_value)
         finally:
-            _ = asyncio.run_coroutine_threadsafe(self._bsclient.exit(),self._enterLoop)
-            _.result()
             self._thread.join()
             self._enterLoop.close()
             self._enterLoop = None
-            # print("结束")
+
+
+    
