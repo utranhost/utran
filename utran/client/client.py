@@ -1,6 +1,9 @@
 import asyncio
+from asyncio import Future
 from functools import partial
-from typing import Coroutine, Union
+import threading
+import time
+from typing import Callable, Coroutine, Union
 from utran.client.baseclient import BaseClient
 from utran.utils import parse_utran_uri
 
@@ -23,8 +26,14 @@ class ExeProxy:
             返回值 (asyncio.Task): 当baseclient已经运行时，`client.call.add(1,2)` 返回Task。可使用await拿到调用结果，例: `await client.call.add(1,2)`
             返回值 (any): 当baseclient未运行时，`client.call.add(1,2)`返回最终的调用结果
         """
-        f:Union[Coroutine,dict] = self._accessProxy_._bsclient_.call(methodName=self._accessProxy_._temp_name_,args=args,dicts=dicts,**self._accessProxy_._temp_opts_)
-        if self._accessProxy_._bsclient_._isRuning:
+        f:Union[Coroutine,dict] = self._accessProxy_._client_._bsclient.call(methodName=self._accessProxy_._temp_name_,args=args,dicts=dicts,**self._accessProxy_._temp_opts_)
+        
+        if self._accessProxy_._client_._enterLoop:
+            # self._accessProxy_._client_._enterLoop.run_until_complete
+            futrue = asyncio.run_coroutine_threadsafe(f,self._accessProxy_._client_._enterLoop)
+            return futrue.result()
+
+        if self._accessProxy_._client_._bsclient._isRuning:
             # f is coroutine
             return asyncio.create_task(f)
         else: 
@@ -34,17 +43,16 @@ class ExeProxy:
             else:
                 # f is coroutine
                 loop = asyncio.get_event_loop()
-                res = loop.run_until_complete(self._accessProxy_._bsclient_.start(main=f))
+                res = loop.run_until_complete(self._accessProxy_._client_._bsclient.start(main=f))
                 return res
-
 
 class AccessProxy:
     """访问代理"""
-    __slots__ = ('_temp_opts_','_temp_name_','_bsclient_','_exeProxy_')
-    def __init__(self,bsclient:BaseClient):
+    __slots__ = ('_temp_opts_','_temp_name_','_client_','_exeProxy_')
+    def __init__(self,client:'Client'):
         self._temp_opts_ = dict()
         self._temp_name_:str = ''
-        self._bsclient_ = bsclient
+        self._client_ = client
         self._exeProxy_ = ExeProxy(self)
 
     def __getattr__(self, methodName):
@@ -59,9 +67,9 @@ class AccessProxy:
             ignore: 是否忽略远程执行结果的错误，忽略错误则值用None填充，默认为为client实例化的值
             multicall: 是否标记为合并调用
         """
-        self._temp_opts_ = dict(timeout= self._bsclient_._localTimeout if timeout==None else timeout,
-                          encrypt= self._bsclient_._encrypt if timeout==None else encrypt,
-                          ignore = self._bsclient_._ignore if ignore==None else ignore,
+        self._temp_opts_ = dict(timeout= self._client_._localTimeout if timeout==None else timeout,
+                          encrypt= self._client_._encrypt if timeout==None else encrypt,
+                          ignore = self._client_._ignore if ignore==None else ignore,
                           multicall = multicall)
         return self
 
@@ -77,7 +85,7 @@ class Client:
         ignore: 是否忽略远程调用异常
         encrypt: 是否加密传输
     """
-    __slots__ = ('_localTimeout','_ignore','_encrypt','_heartbeatFreq','_serverTimeout','_reconnectNum','_bsclient','_proxy','_serveHost','_servePort')
+    __slots__ = ('_localTimeout','_ignore','_encrypt','_heartbeatFreq','_serverTimeout','_reconnectNum','_bsclient','_proxy','_serveHost','_servePort','_enterLoop','_thread')
     def __init__(self,
                  *,
                  host:str=None,
@@ -101,36 +109,42 @@ class Client:
         self._servePort:int = port                                      # 服务器端口号
         self._bsclient:BaseClient = None
 
+        self._enterLoop:asyncio.AbstractEventLoop = None                # 使用__enter__时创建的loop
+
         if uri:
             self._serveHost,self._servePort = parse_utran_uri(uri)
 
-        
+
+        self._bsclient:BaseClient = BaseClient(heartbeatFreq=self._heartbeatFreq,
+                                                serverTimeout=self._serverTimeout,
+                                                reconnectNum=self._reconnectNum,
+                                                encrypt=self._encrypt,
+                                                host=self._serveHost,
+                                                port=self._servePort)
+        self._proxy = AccessProxy(self)
+
 
     def __call__(self, *args: any,**opts: any) -> callable:
         """指定入口函数，可以使用装饰器方式指定入口函数"""
-        self._bsclient:BaseClient = self._bsclient or BaseClient(heartbeatFreq=self._heartbeatFreq,
-                                                                serverTimeout=self._serverTimeout,
-                                                                reconnectNum=self._reconnectNum,
-                                                                encrypt=self._encrypt,
-                                                                host=self._serveHost,
-                                                                port=self._servePort)
-
+        
         return self._bsclient(*args,**opts)
     
 
-    async def start(self,main:Union[asyncio.Future,Coroutine]=None,uri:str=None,host:str=None,port:int=None):
+    async def start(self,main:Union[Future,Coroutine,Callable]=None,uri:str=None,host:str=None,port:int=None,runforever:bool=False):
+        """# 启动连接
+        存在订阅的话题时，程序会一直等待话题的推送，无订阅话题时程序在执行完入口函数`main`后自动退出
+        Args:            
+            main:入口函数，它是一个可等待对象，可以是协程函数、协程对象或Future对象。为指定时默认为
+            uri: 服务器地址 例：`utran://127.0.0.1:8081`
+            host: 不使用uri时可以直接指定服务器的host和port
+            port: 不使用uri时可以直接指定服务器的host和port
+            runforever: 是否一直运行,默认入口函数执行完毕且无任何订阅时会自动退出
+        """
         host = host or self._serveHost
         port = port or self._servePort
-                # 基础客户端
-        self._bsclient:BaseClient = self._bsclient or BaseClient(heartbeatFreq=self._heartbeatFreq,
-                                                                serverTimeout=self._serverTimeout,
-                                                                reconnectNum=self._reconnectNum,
-                                                                encrypt=self._encrypt,
-                                                                host=self._serveHost,
-                                                                port=self._servePort)
-
-        self._proxy = AccessProxy(self._bsclient)
-        await self._bsclient.start(main=main,uri=uri,host=host,port=port)
+        # 基础客户端
+        
+        await self._bsclient.start(main=main,uri=uri,host=host,port=port,runforever=runforever)
 
 
     @property
@@ -174,6 +188,11 @@ class Client:
             _loop = asyncio.get_event_loop()
             return _loop.run_until_complete(self._bsclient.start(main=f))
 
+    @property
+    def exit(self):
+        """退出程序"""
+        if self._bsclient:
+            return self._bsclient.exit
 
     @property
     def call(self)->AccessProxy:
@@ -185,14 +204,35 @@ class Client:
         Returns:
             返回远程调用的代理类
         """
-        if self._bsclient is None or  not self._bsclient._isRuning:
-            self._bsclient:BaseClient = BaseClient(heartbeatFreq=self._heartbeatFreq,
-                                                    serverTimeout=self._serverTimeout,
-                                                    reconnectNum=self._reconnectNum,
-                                                    encrypt=self._encrypt,
-                                                    host=self._serveHost,
-                                                    port=self._servePort)
-            self._proxy = AccessProxy(self._bsclient)
-
-        return self._proxy
         
+        return self._proxy
+    
+
+    def __enter__(self):
+
+        
+        self._enterLoop = asyncio.new_event_loop()
+        def worker(loop:asyncio.AbstractEventLoop):
+            loop.run_until_complete(self._bsclient.start(runforever=True))
+
+        self._thread = threading.Thread(target=worker, args=(self._enterLoop,))
+        self._thread.start()
+
+        while True:
+            if self._bsclient._isRuning:
+                break
+            time.sleep(0.1)
+        return self
+    
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            if exc_type:
+                raise exc_type(exc_value)
+        finally:
+            _ = asyncio.run_coroutine_threadsafe(self._bsclient.exit(),self._enterLoop)
+            _.result()
+            self._thread.join()
+            self._enterLoop.close()
+            self._enterLoop = None
+            # print("结束")
