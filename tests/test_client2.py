@@ -22,6 +22,7 @@ async def main():
 
     res = await client.call.myclass.get_result()
     print(res)
+    # await client.exit()
 
     res = await client.call.add0(1,2) # 无选项调用
     print(res)
@@ -41,7 +42,8 @@ async def main():
                                       ignore=True)
     print(res)
 
-    res = await client.unsubscribe(*['good','study1'])
+    res = await client.unsubscribe(*['good','study'])
     print(res)
+    # await client.exit()
 
 utran.run(client)
