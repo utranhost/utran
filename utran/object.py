@@ -168,7 +168,7 @@ class UtRequest:
 
     def pick_utran_request(self):
         """生成符合utran协议的请求数据"""
-        return pack_data2_utran(self.requestType.value,self.to_dict(),self.encrypt)
+        return pack_data2_utran(self.id,self.requestType.value,self.to_dict(),self.encrypt)
 
 
 
@@ -291,7 +291,7 @@ class ClientConnection:
     async def send(self,response:UtResponse):
         async with self._single_semaphore:     # 每次只允许一个协程调用send方法     
             if isinstance(self.sender,StreamWriter):
-                msg = pack_data2_utran(response.responseType.value,response.to_dict(),self._encrypt)
+                msg = pack_data2_utran(response.id,response.responseType.value,response.to_dict(),self._encrypt)
                 await self.__send_by_sw(msg)
             elif isinstance(self.sender,WebSocketResponse):
                 await self.__send_by_ws(response.to_dict())
