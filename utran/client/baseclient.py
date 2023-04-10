@@ -168,6 +168,7 @@ class BaseClient:
         self._ignore = ignore                                           # 是否忽略远程调用异常
         self._isRuning = False                                          # 是否运行中
         self._curSendTask:asyncio.Task = None
+        self._exitMsg:str = ''
 
     async def start(self,main:Union[Future,Coroutine,Callable]=None,uri:str=None,host:str=None,port:int=None,runforever:bool=False):
         """# 启动连接
