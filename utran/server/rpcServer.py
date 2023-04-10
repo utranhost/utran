@@ -8,7 +8,7 @@ import ujson
 from utran.handler import process_publish_request, process_request
 from utran.log import logger
 
-from utran.object import HeartBeat, UtRequest, create_UtRequest
+from utran.object import HeartBeat, UtRequest, UtResponse, UtState, create_UtRequest
 from utran.register import Register
 from utran.server.baseServer import BaseServer
 from utran.object import ClientConnection, SubscriptionContainer
@@ -76,15 +76,16 @@ class RpcServer(BaseServer):
     async def __handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         buffer = b''
         connection = ClientConnection(writer, self._dataEncrypt)
+        reader.set_exception
         t = float('-inf')
         try:
             while True:
-                data = await reader.read(1024)
+                data = await reader.read(100)
                 if not data:
                     # 收到空消息时，退出，同时清理订阅
                     logger.debug(f'收到空消息，断开连接')
                     break
-
+                
                 # 心跳检测
                 if data == HeartBeat.PING.value:
                     # print("PONG")
@@ -99,19 +100,42 @@ class RpcServer(BaseServer):
                     continue
 
                 try:
-                    requestName, request, buffer = unpack_data2_utran(
-                        data, buffer, self._dataMaxsize)
-                    if request is None:
+                    requestName, header, residual_datasize,buffer = unpack_data2_utran(data)
+                    if header.get('length') > self._dataMaxsize:
+                        # 数据过大，准备丢掉
+                        while residual_datasize>0:
+                            if residual_datasize>1024:
+                                await reader.read(1024)
+                                residual_datasize -=1024
+                            else:
+                                await reader.read(residual_datasize)
+                                residual_datasize = 0
+
+                        response = UtResponse(id=header.get('id'),
+                                            state=UtState.FAILED,
+                                            responseType=requestName,
+                                            error=f'The data size exceeds the upper limit of {self._dataMaxsize} bytes.')
+                        await connection.send(response)
                         continue
+                    else:
+                        # 大小合适
+                        while residual_datasize>0:
+                            if residual_datasize>1024:
+                                buffer+=await reader.read(1024)
+                                residual_datasize -=1024
+                            else:
+                                buffer+=await reader.read(residual_datasize)
+                                residual_datasize = 0
+                                break
+                   
+                        request: str = buffer.decode('utf-8')
+                        res: Union[dict, list] = ujson.loads(request)
 
-                    request: str = request.decode('utf-8')
-                    requestName: str = requestName.decode('utf-8')
-                    res: Union[dict, list] = ujson.loads(request)
-
+                    buffer = b''
                 except Exception as e:
                     logger.debug(f'收客户端数据，拆包时异常:{e}')
                     break
-
+                    
                 # 处理请求
                 if await process_request(create_UtRequest(res, res.get('id'), res.get('encrypt')), connection, self._register, self._sub_container, self._pool):
                     break
