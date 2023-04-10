@@ -27,25 +27,24 @@ class ExeProxy:
             返回值 (asyncio.Task): 当baseclient已经运行时，`client.call.add(1,2)` 返回Task。可使用await拿到调用结果，例: `await client.call.add(1,2)`
             返回值 (any): 当baseclient未运行时，`client.call.add(1,2)`返回最终的调用结果
         """
-        f:Union[Coroutine,dict] = self._accessProxy_._client_._bsclient.call(methodName=self._accessProxy_._temp_name_,args=args,dicts=dicts,**self._accessProxy_._temp_opts_)
+        f:Coroutine = self._accessProxy_._client_._bsclient.call(methodName=self._accessProxy_._temp_name_,args=args,dicts=dicts,**self._accessProxy_._temp_opts_)
+        if self._accessProxy_._temp_opts_.get('multicall'):
+            # muticall调用
+            return f
         
         if self._accessProxy_._client_._enterLoop:
-            # self._accessProxy_._client_._enterLoop.run_until_complete
+            # 调用方式：with关键字，同步指定入口
             futrue = asyncio.run_coroutine_threadsafe(f,self._accessProxy_._client_._enterLoop)
             return futrue.result()
 
         if self._accessProxy_._client_._bsclient._isRuning:
-            # f is coroutine
+            # 调用方式：异步指定入口
             return asyncio.create_task(f)
         else: 
-            if self._accessProxy_._temp_opts_.get('multicall'):
-                # f is dict
-                return f
-            else:
-                # f is coroutine
-                loop = asyncio.get_event_loop()
-                res = loop.run_until_complete(self._accessProxy_._client_._bsclient.start(main=f))
-                return res
+            # 同步单次调用
+            loop = asyncio.get_event_loop()
+            res = loop.run_until_complete(self._accessProxy_._client_._bsclient.start(main=f))
+            return res
 
 class AccessProxy:
     """访问代理"""
@@ -241,12 +240,19 @@ class Client:
         Returns:
             执行结果按顺序放在列表中返回
         """
-        f = self._bsclient.multicall(*calls,encrypt=encrypt,timeout=timeout,ignore=ignore)        
-        if self._bsclient._isRuning:
-            return f
-        else:
+        coro = self._bsclient.multicall(*calls,encrypt=encrypt,timeout=timeout,ignore=ignore)    
+
+        if self._enterLoop:
+            # with关键字调用、同步指定入口
+            futrue = asyncio.run_coroutine_threadsafe(coro,self._enterLoop)
+            return futrue.result()
+        elif not self._bsclient._isRuning:
+            # 同步单次调用
             _loop = asyncio.get_event_loop()
-            return _loop.run_until_complete(self._bsclient.start(main=f))
+            return _loop.run_until_complete(self._bsclient.start(main=coro))
+        else:
+            # 异步指定入口
+            return coro
 
 
     def exit(self):
