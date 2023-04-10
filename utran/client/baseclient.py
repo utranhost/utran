@@ -129,7 +129,8 @@ class BaseClient:
                '_main',
                '_ignore',
                '_isRuning',
-               '_curSendTask')
+               '_curSendTask',
+               '_exitMsg')
     
     def __init__(self,
                  *,
@@ -301,10 +302,16 @@ class BaseClient:
             except Exception as e:
                 logger.error(f"重连失败:{e}")
                 await asyncio.sleep(1)
-            n-=1
+            finally:
+                n-=1
+                if n==0:break
 
         self._receive_task.cancel()    
-        self._main_task.cancel()
+        self._reconnectingEvent.set()
+        self._curSendTask.cancel()
+        self._curSendTask = None
+        self._exitMsg = '服务器无响应重连结束，程序退出！'
+        # self._main_task.cancel()
         logger.error("服务器无响应重连结束，程序退出！")      
         await self.exit()
 
@@ -476,16 +483,20 @@ class BaseClient:
                 logger.success(f"接续被中断的请求: ID:{request.id}, {request.requestType.value}.")
                 return await self._send(request=request,timeout=timeout,ignore=ignore)
             else:
-                # 本地等待超时，非断线原因
-                logger.warning(f'Local call timeout ({timeout}s):{request.to_dict()}')
-                await self.exit()
-                raise e
+                if self._exitMsg:
+                    raise RuntimeError(self._exitMsg)
+                else:
+                    # 本地等待超时，非断线原因
+                    msg = f'Local call timeout ({timeout}s):{request.to_dict()}'
+                    logger.error(msg)
+                    await self.exit()
+                    raise RuntimeError(msg)
                 
 
     async def __receive(self):
         # print("启动接收任务")
         while True:
-            chunk = await self._reader.read(1024)
+            chunk = await self._reader.read(100)
             if not chunk:
                 raise ConnectionError('Connection closed by server')
             
@@ -495,19 +506,28 @@ class BaseClient:
                 # print(f"-PONG: {self._heartbeatTimer.getResponseDelay()}ms")
                 continue
 
-            name,message,self._buffer = unpack_data2_utran(chunk, self._buffer)
-            if message is not None:
-                try:
-                    # name:str = name.decode('utf-8')
-                    response:UtResponse = UtResponse(**ujson.loads(message.decode('utf-8').strip()))
-                except Exception as e:
-                    logger.warning(f'服务器消息异常: {e}')
-                    continue
+            try:
+                buffer = b''
+                responseName,header,residual_datasize,buffer = unpack_data2_utran(chunk)
+                while residual_datasize>0:
+                    if residual_datasize>1024:
+                        buffer+=await self._reader.read(1024)
+                        residual_datasize -=1024
+                    else:
+                        buffer+=await self._reader.read(residual_datasize)
+                        residual_datasize = 0
+                        break
+            
+                # name:str = name.decode('utf-8')
+                response:UtResponse = UtResponse(**ujson.loads(buffer.decode('utf-8').strip()))
+            except Exception as e:
+                logger.warning(f'服务器消息异常: {e}')
+                continue
 
-                if response.responseType == UtType.PUBLISH:
-                    asyncio.create_task(self._handler_publish(**response.result))
-                else:
-                    self._reslutqueue.cache_response(response)
+            if response.responseType == UtType.PUBLISH:
+                asyncio.create_task(self._handler_publish(**response.result))
+            else:
+                self._reslutqueue.cache_response(response)
    
 
     async def _handler_publish(self,topic:str,msg:any):
