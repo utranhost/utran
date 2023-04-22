@@ -21,7 +21,7 @@ res= client.multicall(*[client.call(multicall=True).add(1,i) for i in range(0,20
 print(res)
 
 
-res = client.subscribe('good',lambda x,y:print(x,y))
+res = client.unsubscribe('good')
 print(res)
 
 print("我要退出咯")

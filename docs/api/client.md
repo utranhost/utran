@@ -2,53 +2,61 @@
 
 
 ## 【客户端】
-
-#### 简单调用 （同步）
-这是一种简便的使用方式，它每次调用都会建立连接和关闭连接，且不支持订阅
+同步调用方式会将服务启动到一个子线程中。异步调用不会使用子线程来运行服务
+#### 示例1 （同步调用）
+这种调用方式无论是否有订阅，都需要手动调用exit方法退出
 ```python title='使用示例3'
 import utran
 from utran.client.client import Client
 
-client = Client(uri='utran://127.0.0.1:8081')
+client = Client()
+# client.start()  # 不调用start方法时，会自启动
 
-res = client.call.add(1,2)
+res = client.subscribe('good',lambda x,y:print(x,y))
 print(res)
 
-res:list = client.multicall(client.call(multicall=True).add(1,2),
-                            client.call(multicall=True).add(2,2),
-                            ignore=True)
+res= client.multicall(*[client.call(multicall=True).add(1,i) for i in range(0,20)],retransmitFull=False)        
 print(res)
+
+res = client.unsubscribe('good')
+print(res)
+
+client.exit()  # 无论是否有订阅，都需要手动退出
 
 ```
-#### 指定入口调用 （同步）
-在main函数执行完毕后，如果有订阅的会自动等待推送，订阅为空时会自动退出
+
+
+### 装饰器用法
+装饰器用法，在main函数执行完毕后，如果有订阅的会自动等待推送，订阅为空时会自动退出
+#### 示例1（同步调用）
+
 ```python title='使用示例1'
 import utran
 from utran.client.client import Client
 
-client = Client(uri='utran://127.0.0.1:8081')
+client = Client(url='ws://127.0.0.1:8080')
 
 @client
 def main():
-    res = client.subscribe(['good','study'],lambda msg,topic:print(msg,topic))
+    res = client.subscribe('good',lambda x,y:print(x,y))
     print(res)
 
-    res = client.call(ignore=True).ad0d(1,2)
+    res = client.call.myclass.add(1,2)
     print(res)
 
-    res = client.call.add(1,5)
+    res= client.multicall(*[client.call(multicall=True).add(1,i) for i in range(0,20)],retransmitFull=False)        
     print(res)
 
-    res = client.unsubscribe(*['good','study'])
-    print(res)
+    client.unsubscribe('good')
+
+
 ```
-#### 指定入口调用 （异步）
-这是一种高效的异步使用方式，支持订阅
+#### 示例2 （异步调用）
 ```python title='使用示例2'
 import utran
 from utran.client.client import Client
 
-client = Client(uri='utran://127.0.0.1:8081')
+client = Client(url='ws://127.0.0.1:8080')
 
 @client
 async def main():
@@ -66,13 +74,14 @@ async def main():
 
 
 ```
-#### 使用with关键 （同步）
+### 使用with关键 （同步调用）
 使用逻辑与指定入口的方式一致
+#### 示例1（同步调用）
 ```python title='使用示例2'
 import utran
 from utran.client.client import Client
 
-with Client(uri='utran://127.0.0.1:8081') as client:
+with Client(url='ws://127.0.0.1:8080') as client:
     res = client.subscribe(['good','study'],lambda msg,topic:print(msg,topic))
     print(res)
 
@@ -85,6 +94,48 @@ with Client(uri='utran://127.0.0.1:8081') as client:
     res = client.unsubscribe(*['good','study'])
     print(res)
 ```
+
+#### 示例2 （异步调用）
+```python title='使用示例2'
+import utran
+from utran.client.client import Client
+
+async def main():
+    async with Client() as client:
+        res = await client.subscribe('good',lambda x,y:print(x,y))
+        res= await client.multicall(*[client.call(multicall=True).add(1,i) for i in range(0,100)],retransmitFull=False)
+        print(res)
+        # time.sleep(1)
+        # await client.exit()
+        res = await client.unsubscribe('good')
+
+asyncio.run(main())
+```
+
+
+
+### run用法，指定入口
+```python title='使用示例2'
+from utran.client.client import Client
+
+# async call
+async def main(client:Client):
+    res = await client.call.myclass.add(1,2)
+    print(res)
+
+utran.run(Client(),entry=main)
+
+print('\n',"--"*50)
+
+# sync call
+def main(client:Client):
+    res = client.call.myclass.add(1,2)
+    print(res)
+
+utran.run(Client(),entry=main,url='ws://127.0.0.1:8080')
+```
+
+
 
 
 
@@ -102,47 +153,43 @@ def on_topic(msg,topic):
     print(f"{topic}：",msg)
 
 # 实例化，并指定断线重连次数为3次
-client = BaseClient(reconnectNum=3)
+bsclient = BaseClient(maxReconnectNum=3)
 
-@client
 async def main():
     # 订阅话题
-    res = await client.subscribe('good',on_topic)
+    res = await bsclient.subscribe('good',on_topic)
     print(res)
 
     # 调用远程函数
-    res = await client.call('add',dicts=dict(a=1,b=2))
+    res = await bsclient.call('add',dicts=dict(a=1,b=2))
     print(res)
 
     # 调用不存在的远程函数，ignore=True 忽略错误
-    res = await client.call('add300',dicts=dict(a=0,b=1),ignore=True)
+    res = await bsclient.call('add300',dicts=dict(a=0,b=1),ignore=True)
     print(res)
 
     # 合并多次调用
-    res:list = await client.multicall(client.call('add',dicts=dict(a=1,b=2),multicall=True),
-                                      client.call('add',dicts=dict(a=2,b=2),multicall=True),
-                                      client.call('add',dicts=dict(a=3,b=2),multicall=True),
-                                      client.call('add',dicts=dict(a=4,b=2),multicall=True),
-                                      client.call('add300',dicts=dict(a=6,b=2),multicall=True)
+    res:list = await bsclient.multicall(bsclient.call('add',dicts=dict(a=1,b=2),multicall=True),
+                                      bsclient.call('add',dicts=dict(a=2,b=2),multicall=True),
+                                      bsclient.call('add',dicts=dict(a=3,b=2),multicall=True),
+                                      bsclient.call('add',dicts=dict(a=4,b=2),multicall=True),
+                                      bsclient.call('add300',dicts=dict(a=6,b=2),multicall=True)
                                       ,ignore=True)
     print(res)
 
 
     # 取消订阅话题
-    res = await client.unsubscribe('good')
+    res = await bsclient.unsubscribe('good')
     print(res)
 
     # 退出程序
-    # await client.exit()
+    # await bsclient.exit()
 
 
 if __name__ == "__main__":
     # 运行程序
-    utran.run(client,uri='utran://127.0.0.1:8081')
+    asyncio.run(main())
 
 ```
 
 :::utran.client.baseclient
-
-## 【队列】
-:::utran.client.que

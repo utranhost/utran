@@ -15,9 +15,11 @@ class BaseClient:
         ignore: 全局设置，是否忽略远程执行结果的错误，忽略错误则值用None填充
         compress: 是否压缩数据
         max_msg_size: 表示接收消息的最大大小（以字节为单位）。如果接收到的消息大小超过该值，则会引发异常。
+        username: 用户名
+        password: 密码
     """
     __slots__ = ('_url','_session','_ws','_rpc_requests','_isclosed','_maxReconnectNum','_reconnect_attempts','_topics_handler','_ignore',
-                 '_exitEvent','_compress','_max_msg_size','_receive_task','__auth','_hasReconected')
+                 '_exitEvent','_compress','_max_msg_size','_receive_task','__auth')
     def __init__(self,
                  url:str='ws://localhost:8080',
                  maxReconnectNum:int=10,
@@ -39,7 +41,7 @@ class BaseClient:
         self._compress = compress
         self._max_msg_size = max_msg_size
         self._receive_task = None
-        self._hasReconected:bool = False                                # 是否刚刚重连
+
 
         if username!=None or password!=None:
             assert username!=None,'username is None.'
@@ -99,7 +101,6 @@ class BaseClient:
                     logger.error(f'Reconnecting... (attempt {i+1}/{self._maxReconnectNum})')
                     await asyncio.sleep(0.5 * (min(i, 10)))
                     await self.start()
-                    self._hasReconected = True
                     return
                 except Exception as e:
                     logger.error(f'WebSocket connection error: {e}')                    

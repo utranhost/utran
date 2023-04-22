@@ -61,14 +61,15 @@ class AccessProxy:
 
 class Client:
     """# 客户端
-    支持代理调用
     Args:
-        heartbeatFreq: 心跳频率
-        serverTimeout: 服务器心跳响应超时时间，用于判断是否断线，超过此值会进行重连 (单位:秒)
-        localTimeout: 本地调用超时 (单位:秒)
-        reconnectNum: 断线重连的次数
-        ignore: 是否忽略远程调用异常
-        encrypt: 是否加密传输
+        url: 服务器地址
+        maxReconnectNum: 断线后最大重连次数
+        ignore: 全局设置，是否忽略远程执行结果的错误，忽略错误则值用None填充
+        compress: 是否压缩数据
+        max_msg_size: 表示接收消息的最大大小（以字节为单位）。如果接收到的消息大小超过该值，则会引发异常。
+        username: 用户名
+        password: 密码
+        loop: 指定事件循环
     """
     __slots__ = ('_loop','_thread','_bsclient','_is_loop_autogen')
     
@@ -80,7 +81,7 @@ class Client:
                  max_msg_size: int = 4 * 1024 * 1024, 
                  username: str = None, 
                  password: str = None,
-                 loop = None) -> None:
+                 loop:asyncio.AbstractEventLoop = None) -> None:
         
         self._bsclient = BaseClient(url, maxReconnectNum, ignore, compress, max_msg_size, username, password)
         self._loop:asyncio.AbstractEventLoop = loop

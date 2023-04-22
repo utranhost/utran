@@ -36,12 +36,3 @@ utran.run(server,host='127.0.0.1',port=8081,web_port=8080)
 ## 【运行器】
 :::utran.run
 
-
-## 协议样例
-```python title='Utran协议'
-rpc/subscribe/unsubscribe/publish
-length:xx
-encrypt:0/1
-message_json
-
-```

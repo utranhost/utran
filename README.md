@@ -25,21 +25,22 @@ utran.run(server,host='127.0.0.1',port=8081,web_port=8080)
 
 ```
 
-## 客户端1（同步）
-```python title='服务端示例'
+## 客户端1（同步调用）
+```python title='客户端示例'
 import utran
 
-client = utran.Client(uri='utran://127.0.0.1:8081')
+client = utran.Client(url='ws://127.0.0.1:8081')
 res = client.call.add(1,2)
 print(res)
 
+client.exit()
 ```
 
-## 客户端2（同步，支持订阅）
-```python title='服务端示例'
+## 客户端2（同步调用）
+```python title='客户端示例'
 import utran
 
-client = utran.Client(uri='utran://127.0.0.1:8081')
+client = utran.Client(url='ws://127.0.0.1:8081')
 
 @client
 def main():
@@ -48,11 +49,11 @@ def main():
 
 ```
 
-## 客户端3（异步，支持订阅）
-```python title='服务端示例'
+## 客户端3（异步调用）
+```python title='客户端示例'
 import utran
 
-client = utran.Client(uri='utran://127.0.0.1:8081')
+client = utran.Client(url='ws://127.0.0.1:8081')
 
 @client
 async def main():
@@ -61,11 +62,21 @@ async def main():
 
 ```
 
-## 客户端4（同步，支持订阅）
-```python title='服务端示例'
+## 客户端4（同步调用）
+```python title='客户端示例'
 import utran
 
-with utran.Client(uri='utran://127.0.0.1:8081') as client:
+with utran.Client(url='ws://127.0.0.1:8081') as client:
+    res = client.call.add(1,2)
+    print(res)
+
+```
+
+## 客户端5（异步调用）
+```python title='客户端示例'
+import utran
+
+async with utran.Client(url='ws://127.0.0.1:8081') as client:
     res = await client.call.add(1,2)
     print(res)
 

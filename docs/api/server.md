@@ -2,7 +2,7 @@
 # 服务端模块
 
 
-## 【完整服务端】
+## 【服务端】
 ```python title='RpcServer使用示例'
 import utran
 from utran.server import Server,HttpResponse
@@ -33,37 +33,10 @@ async def pub(topic:str,msg:str):
     await server.publish(id,msg,topic)
 
 
-utran.run(server,host='127.0.0.1',port=8081,web_port=8080)
+utran.run(server,host='127.0.0.1',port=8081,port=8080)
 
 ```
 ::: utran.server.Server
-
-
-
-
-
-
-## 【Rpc服务端】
-```python title='RpcServer使用示例'
-import utran
-from utran.server import RpcServer
-
-server = RpcServer()
-
-@server.register.rpc
-async def add(a:int,b:int):
-    return a+b
-
-@server.register.rpc
-async def sub(a:int,b:int):
-    return a-b
-
-utran.run(server,host='127.0.0.1',port=8081)
-
-```
-::: utran.server.RpcServer
-
-
 
 
 
@@ -82,7 +55,7 @@ async def home(name='utran'):
 async def add(a:int,b:int):
     return a+b
 
-utran.run(server,host='127.0.0.1',web_port=8080)
+utran.run(server,host='127.0.0.1',port=8080)
 ```
 ::: utran.server.WebServer
 
