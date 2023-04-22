@@ -14,8 +14,8 @@ from utran.utils import pack_data2_utran
 
 class HeartBeat(Enum):
     """心跳"""
-    PING: bytes = b'PING'
-    PONG: bytes = b'PONG'
+    PING: bytes = b'PING\n'
+    PONG: bytes = b'PONG\n'
 
 
 class UtType(Enum):
@@ -135,6 +135,20 @@ class UtRequest:
         self.encrypt = encrypt
         self.multiple = multiple
 
+    def __repr__(self) -> str:
+        return '<UtRequest>' + self.__str__
+        
+        
+    def __str__(self) -> str:
+        s = f' requestType:{self.requestType.value},id:{self.id},encrypt:{self.encrypt}'
+        if self.requestType == UtType.RPC:
+            return s+f',methodName:{self.methodName}'
+        if self.requestType == UtType.MULTICALL:
+            return s+f',nums:{len(self.multiple)}'
+        if self.requestType == UtType.UNSUBSCRIBE or self.requestType == UtType.SUBSCRIBE or self.requestType == UtType.PUBLISH:
+            return s+f',topics:{self.topics}'
+
+
     def to_dict(self):
         """转为字典"""
         if self.requestType == UtType.RPC:
@@ -195,6 +209,8 @@ def create_UtRequest(msg:Union[dict,list[dict]],id=None,encrypt=False)->UtReques
         elif type(msg)==dict:
             msg['id'] = id
             return msg
+        elif type(msg)==bytes:
+            msg = msg[:1]+f'"id":{id},'.encode()+msg[1:]
         else:
             raise ValueError('"msg" must be a dict type!')
         return msg

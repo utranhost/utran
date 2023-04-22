@@ -7,15 +7,18 @@ os.sys.path.append(os.path.abspath('../'))
 import utran
 from utran.client.client import Client
 
-client = utran.Client(uri='utran://127.0.0.1:8081')
+
 
 def on_topic(msg,topic):
     print(f"{topic}：",msg)
 
 
+
+client = utran.Client(url='ws://127.0.0.1:8080')
+
 @client
 async def main():
-    res = await client.subscribe(['good','study'],on_topic)
+    res = await client.subscribe(['good','study'],[on_topic]*2)
     print(res)
     res = await client.call.myclass.add(23,7890)
     print(res)
@@ -46,3 +49,19 @@ async def main():
     print(res)
     # await client.exit()
 
+
+print("\n","-"*30)
+
+
+@client
+async def main(this:Client):
+    res = await this.subscribe('good',lambda x,y:print(x,y))
+    print(res)
+
+    res = await this.call.myclass.add(1,2)
+    print(res)
+
+    res= await this.multicall(*[this.call(multicall=True).add(1,i) for i in range(0,20)],retransmitFull=False)        
+    print(res)
+
+    await this.unsubscribe('good')

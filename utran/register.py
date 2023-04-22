@@ -7,6 +7,7 @@ from typing import Callable
 
 from utran.object import BaseDataModel, UtState
 from utran.log import logger
+from utran.utils import asyncfn_runner
 
 def allowType(v,t,n):
     """ 
@@ -63,9 +64,7 @@ def cheekType(params:tuple,annotations:dict,args:tuple,dicts:dict={})->tuple:
 
 
 
-def asyncfn_runner(fn:Callable,*args,**kwds):
-    """子进程中的异步执行器"""
-    return asyncio.run(fn(*args,**kwds))
+
 
 class RMethod:
     """

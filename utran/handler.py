@@ -23,30 +23,32 @@ async def process_request(request:UtRequest,connection:ClientConnection,register
     Returns:
         返回一个布尔值,是否结束连接
     """
-    
-    if UtType.RPC==request.requestType:
-        #  Rpc请求
-        t = asyncio.create_task(process_rpc_request(request,connection,register,pool=pool))
-        return await t
-    
-    elif UtType.UNSUBSCRIBE==request.requestType:
-        # 取消订阅 topic        
-        return await process_unsubscribe_request(request,connection,sub_container)
+    try:
+        if UtType.RPC==request.requestType:
+            #  Rpc请求
+            t = asyncio.create_task(process_rpc_request(request,connection,register,pool=pool))
+            return await t
+        
+        elif UtType.UNSUBSCRIBE==request.requestType:
+            # 取消订阅 topic        
+            return await process_unsubscribe_request(request,connection,sub_container)
 
-    elif UtType.SUBSCRIBE==request.requestType:
-        # 订阅 topic
-        return await process_subscribe_request(request,connection,sub_container)
+        elif UtType.SUBSCRIBE==request.requestType:
+            # 订阅 topic
+            return await process_subscribe_request(request,connection,sub_container)
 
-    elif UtType.PUBLISH==request.requestType:
-        # 发布        
-        return await process_publish_request(request,sub_container)
+        elif UtType.PUBLISH==request.requestType:
+            # 发布        
+            return await process_publish_request(request,sub_container)
 
-    elif UtType.MULTICALL == request.requestType:
-        return await process_multicall_request(request,connection,register,sub_container,pool=pool)
+        elif UtType.MULTICALL == request.requestType:
+            return await process_multicall_request(request,connection,register,sub_container,pool=pool)
 
-    else:
-        # logging.log(f"处理请求时,出现不受支持的请求,请求的内容：{request}")
-        return True
+        else:
+            # logging.log(f"处理请求时,出现不受支持的请求,请求的内容：{request}")
+            return True
+    except Exception as e:
+        raise e
 
 
 async def process_multicall_request(request:UtRequest,connection:ClientConnection,register:Register,sub_container:SubscriptionContainer,pool:ProcessPoolExecutor=None)->bool:
@@ -218,7 +220,6 @@ async def process_unsubscribe_request(request:UtRequest,connection:ClientConnect
     if sub_container.has_sub(connection.id):
         t_ = sub_container.remove_topic(connection.id,topics)
         response.result = dict(unSubTopics=t_,allTopics=connection.topics)
-        await connection.send(response)
     else:
         response.state = UtState.FAILED
         response.error = '非订阅者，无法执行该操作，服务器将关闭连接！'        

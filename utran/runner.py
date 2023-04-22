@@ -4,32 +4,54 @@ from typing import Union
 
 from utran.client.baseclient import BaseClient
 from utran.client.client import Client
-from utran.server.rpcServer import RpcServer
 from utran.server.server import Server
 from utran.server.webserver import WebServer
 
-from utran.utils import parse_utran_uri
 
-def run(app:Union[Server,RpcServer,WebServer,BaseClient,Client],host:str='127.0.0.1',port:int=8081,web_port:int=8080,uri:str=None):
+def run(app:Union[Server,WebServer,BaseClient,Client],
+        *,
+        host:str='127.0.0.1',
+        port:int=8080,
+        url:str=None,
+        entry:callable=None,
+        loop:asyncio.AbstractEventLoop=None,
+        username: str = None,
+        password: str = None):
     """# 通用的运行器
     Args:
         app: 需要运行的服务
         host: 主机
         port: RPC端口
         web_port: WEB端口
-        uri: 远程服务地址    
+        url: 远程服务地址    
+        loop: 指定事件循环
     """
-    if isinstance(app,Server):asyncio.run(app.start(host=host,
-                                                    web_port=web_port,
-                                                    rpc_port=port))
+
+    if isinstance(app,Server):        
+        coro= app.start(host=host,
+                port=port,
+                username=username,
+                password=password)
+        if loop:
+            loop.run_until_complete(coro)
+        else:
+            asyncio.run(coro)
         
-    if isinstance(app,RpcServer):asyncio.run(app.start(host=host,
-                                                       port=port))
-        
-    if isinstance(app,WebServer):asyncio.run(app.start(host=host,
-                                                       port=web_port))
+
+    if isinstance(app,WebServer):
+        coro= app.start(host=host,
+                port=port,
+                username=username,
+                password=password)
+        if loop:
+            loop.run_until_complete(coro)
+        else:
+            asyncio.run(coro)
     
-    if uri: 
-        host,port = parse_utran_uri(uri)
-    if isinstance(app,BaseClient) or isinstance(app,Client):
-        asyncio.run(app.start(host=host,port=port))
+
+    if isinstance(app,Client):
+        if callable(entry):
+            app(entry,url=url,username=username,password=password,loop=loop)
+        else:
+            raise RuntimeError('Run Error,未指定有效的entry')
+        

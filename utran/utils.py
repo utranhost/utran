@@ -3,7 +3,7 @@ import asyncio
 import inspect
 import re
 import ujson
-from typing import Union
+from typing import Callable, Coroutine, Union
 
 
 def unpack_data2_utran(buffer:bytes=b'')->tuple[str,dict,int,bytes]:
@@ -54,7 +54,7 @@ def unpack_data2_utran(buffer:bytes=b'')->tuple[str,dict,int,bytes]:
     
 
 
-def pack_data2_utran(id:int,name:str,message:dict,encrypt:bool=False)->bytes:
+def pack_data2_utran(id:int,name:str,message:Union[dict,bytes],encrypt:bool=False)->bytes:
     """
     根据utran协议将要发送的消息打包成二进制格式
 
@@ -71,14 +71,17 @@ def pack_data2_utran(id:int,name:str,message:dict,encrypt:bool=False)->bytes:
     Args:
         id: 整数类型的值
         name: 请求类型的名称
-        message: 要发送的消息（dict类型）
+        message: 要发送的消息（dict类型） 或者 bytes
         encrypt: 是否加密数据
 
     Returns:
         打包后的二进制数据
     """
-    message_json = ujson.dumps(message).encode('utf-8')
-    
+    if type(message) == dict:
+        message_json = ujson.dumps(message).encode('utf-8')
+    elif type(message) != bytes:
+        raise ValueError('Packaging error,The message must be a dict or bytes ')
+
     if encrypt:
         # 加密算法还未实现
         pass
@@ -182,3 +185,14 @@ def parameter_serialization(fun,*args,**kwds):
         raise TypeError(f'{fun.__name__}() The number of parameters is incorrect.')
 
     return res_+_res
+
+
+def asyncfn_runner(fn:Union[Callable,Coroutine],*args,**kwds):
+    """子进程或线程中的异步执行器"""
+    if asyncio.iscoroutinefunction(fn):
+        return asyncio.run(fn(*args,**kwds))
+    elif asyncio.iscoroutine(fn):
+        return asyncio.run(fn)
+    
+
+    

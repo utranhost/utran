@@ -2,6 +2,7 @@
 import asyncio
 from concurrent.futures import ProcessPoolExecutor
 import time
+import aiohttp
 import ujson
 import re
 from aiohttp import web
@@ -19,7 +20,7 @@ from utran.log import logger
 
 
 class WebServer(BaseServer):
-    __slots__=tuple()
+    __slots__=('__auth',)
 
     def __init__(self, 
                  *, 
@@ -28,7 +29,7 @@ class WebServer(BaseServer):
                  severName: str = 'WebServer', 
                  checkParams: bool = True, 
                  checkReturn: bool = True, 
-                 dataMaxsize: int = 102400, 
+                 dataMaxsize: int = 1024*1024, 
                  limitHeartbeatInterval: int = 1, 
                  dataEncrypt: bool = False, 
                  workers: int = 0, 
@@ -44,11 +45,18 @@ class WebServer(BaseServer):
             dataEncrypt=dataEncrypt, 
             workers=workers, 
             pool=pool)
+        
+        self.__auth:aiohttp.BasicAuth = aiohttp.BasicAuth('utranhost','utranhost')
 
 
-    async def start(self,host: str,port: int,) -> None:
+    async def start(self,host: str,port: int,username:str=None,password:str=None) -> None:
         self._host = host
         self._port = port
+
+        if username!=None or password!=None:
+            assert username!=None,'username is None.'
+            assert password!=None,'password is None.'
+            self.__auth:aiohttp.BasicAuth = aiohttp.BasicAuth(username,password)
 
         # 创建进程池
         if self._workers>0 and self._pool is None:
@@ -65,11 +73,26 @@ class WebServer(BaseServer):
 
     async def handle_request(self,request:web_request.BaseRequest):
         """处理web请求,分发http请求和websocket请求"""
+
+        # 验证身份验证信息
+        auth_header = request.headers.get('Authorization')
+        if auth_header:
+            auth = self.__auth.decode(auth_header)
+        else:
+            auth = None
+            
         wname = request.headers.get('Upgrade')
         if wname and wname.lower() == 'websocket':
-            ws = WebSocketResponse()            
-            print(type(ws))
+            ws = WebSocketResponse(max_msg_size=self._dataMaxsize)            
             await ws.prepare(request)
+            if auth != self.__auth:
+                # 身份验证失败
+                await ws.send_str('身份验证失败!')
+                return
+            else:
+                #  身份验证成功
+                await ws.send_str('ok')
+
             await self.websocket_handler(ws)
         else:
             return await self.http_handler(request)
@@ -121,11 +144,11 @@ class WebServer(BaseServer):
     async def websocket_handler(self,ws:WebSocketResponse):
         """处理websocket请求"""
         connection = ClientConnection(ws,self._dataEncrypt)
-        t = float('-inf')
+        t = float('-inf')        
         async for msg in ws:
-
             # 心跳检测
-            if msg.type == WSMsgType.PING or msg.type == WSMsgType.TEXT and msg.data == HeartBeat.PING.value.decode():
+            # print(msg.type)
+            if msg.type == WSMsgType.PING:
                 if time.time() - t < self._limitHeartbeatInterval: break
                 t = time.time()
                 await ws.send_str(HeartBeat.PONG.value.decode())                
@@ -136,10 +159,8 @@ class WebServer(BaseServer):
                     if msg.data:
                         res:dict = ujson.loads(msg.data)
                         if type(res)!=dict:break
-
                         # 处理请求
-                        if await process_request(create_UtRequest(res,res.get('id'),res.get('encrypt')),connection,self._register,self._sub_container,pool=self._pool):
-                            break
+                        asyncio.create_task(process_request(create_UtRequest(res,res.get('id'),res.get('encrypt')),connection,self._register,self._sub_container,pool=self._pool))
                         continue
                 except:
                     break
