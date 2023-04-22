@@ -533,7 +533,7 @@
 
 
 <h2 id="utran.runner.run" class="doc doc-heading">
-<code class="highlight language-python"><span class="n">run</span><span class="p">(</span><span class="n">app</span><span class="p">,</span> <span class="n">host</span><span class="o">=</span><span class="s1">&#39;127.0.0.1&#39;</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="mi">8081</span><span class="p">,</span> <span class="n">web_port</span><span class="o">=</span><span class="mi">8080</span><span class="p">,</span> <span class="n">uri</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+<code class="highlight language-python"><span class="n">run</span><span class="p">(</span><span class="n">app</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">host</span><span class="o">=</span><span class="s1">&#39;127.0.0.1&#39;</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="mi">8080</span><span class="p">,</span> <span class="n">url</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">entry</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">loop</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">username</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">password</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 </h2>
 
@@ -556,7 +556,7 @@
         <tr>
           <td><code>app</code></td>
           <td>
-                <code><span title="typing.Union">Union</span>[<a class="autorefs autorefs-internal" title="utran.server.server.Server" href="../server/#utran.server.Server">Server</a>, <a class="autorefs autorefs-internal" title="utran.server.rpcServer.RpcServer" href="../server/#utran.server.RpcServer">RpcServer</a>, <a class="autorefs autorefs-internal" title="utran.server.webserver.WebServer" href="../server/#utran.server.WebServer">WebServer</a>, <a class="autorefs autorefs-internal" title="utran.client.baseclient.BaseClient" href="../client/#utran.client.baseclient.BaseClient">BaseClient</a>, <a class="autorefs autorefs-internal" title="utran.client.client.Client" href="../client/#utran.client.client.Client">Client</a>]</code>
+                <code><span title="typing.Union">Union</span>[<a class="autorefs autorefs-internal" title="utran.server.server.Server" href="../server/#utran.server.Server">Server</a>, <a class="autorefs autorefs-internal" title="utran.server.webserver.WebServer" href="../server/#utran.server.WebServer">WebServer</a>, <a class="autorefs autorefs-internal" title="utran.client.baseclient.BaseClient" href="../client/#utran.client.baseclient.BaseClient">BaseClient</a>, <a class="autorefs autorefs-internal" title="utran.client.client.Client" href="../client/#utran.client.client.Client">Client</a>]</code>
           </td>
           <td><p>需要运行的服务</p></td>
           <td>
@@ -580,25 +580,34 @@
           </td>
           <td><p>RPC端口</p></td>
           <td>
-                <code>8081</code>
+                <code>8080</code>
           </td>
         </tr>
         <tr>
           <td><code>web_port</code></td>
           <td>
-                <code>int</code>
           </td>
           <td><p>WEB端口</p></td>
           <td>
-                <code>8080</code>
+              <em>required</em>
           </td>
         </tr>
         <tr>
-          <td><code>uri</code></td>
+          <td><code>url</code></td>
           <td>
                 <code>str</code>
           </td>
-          <td><p>远程服务地址</p></td>
+          <td><p>远程服务地址    </p></td>
+          <td>
+                <code>None</code>
+          </td>
+        </tr>
+        <tr>
+          <td><code>loop</code></td>
+          <td>
+                <code>asyncio.<span title="asyncio.AbstractEventLoop">AbstractEventLoop</span></code>
+          </td>
+          <td><p>指定事件循环</p></td>
           <td>
                 <code>None</code>
           </td>
@@ -608,7 +617,9 @@
 
       <details class="quote">
         <summary>Source code in <code>utran\runner.py</code></summary>
-        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-13">13</a></span>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-11">11</a></span>
+<span class="normal"><a href="#__codelineno-0-12">12</a></span>
+<span class="normal"><a href="#__codelineno-0-13">13</a></span>
 <span class="normal"><a href="#__codelineno-0-14">14</a></span>
 <span class="normal"><a href="#__codelineno-0-15">15</a></span>
 <span class="normal"><a href="#__codelineno-0-16">16</a></span>
@@ -630,29 +641,73 @@
 <span class="normal"><a href="#__codelineno-0-32">32</a></span>
 <span class="normal"><a href="#__codelineno-0-33">33</a></span>
 <span class="normal"><a href="#__codelineno-0-34">34</a></span>
-<span class="normal"><a href="#__codelineno-0-35">35</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-13" name="__codelineno-0-13"></a><span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="n">app</span><span class="p">:</span><span class="n">Union</span><span class="p">[</span><span class="n">Server</span><span class="p">,</span><span class="n">RpcServer</span><span class="p">,</span><span class="n">WebServer</span><span class="p">,</span><span class="n">BaseClient</span><span class="p">,</span><span class="n">Client</span><span class="p">],</span><span class="n">host</span><span class="p">:</span><span class="nb">str</span><span class="o">=</span><span class="s1">&#39;127.0.0.1&#39;</span><span class="p">,</span><span class="n">port</span><span class="p">:</span><span class="nb">int</span><span class="o">=</span><span class="mi">8081</span><span class="p">,</span><span class="n">web_port</span><span class="p">:</span><span class="nb">int</span><span class="o">=</span><span class="mi">8080</span><span class="p">,</span><span class="n">uri</span><span class="p">:</span><span class="nb">str</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-<a id="__codelineno-0-14" name="__codelineno-0-14"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;# 通用的运行器</span>
-<a id="__codelineno-0-15" name="__codelineno-0-15"></a><span class="sd">    Args:</span>
-<a id="__codelineno-0-16" name="__codelineno-0-16"></a><span class="sd">        app: 需要运行的服务</span>
-<a id="__codelineno-0-17" name="__codelineno-0-17"></a><span class="sd">        host: 主机</span>
-<a id="__codelineno-0-18" name="__codelineno-0-18"></a><span class="sd">        port: RPC端口</span>
-<a id="__codelineno-0-19" name="__codelineno-0-19"></a><span class="sd">        web_port: WEB端口</span>
-<a id="__codelineno-0-20" name="__codelineno-0-20"></a><span class="sd">        uri: 远程服务地址    </span>
-<a id="__codelineno-0-21" name="__codelineno-0-21"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-22" name="__codelineno-0-22"></a>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">app</span><span class="p">,</span><span class="n">Server</span><span class="p">):</span><span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">app</span><span class="o">.</span><span class="n">start</span><span class="p">(</span><span class="n">host</span><span class="o">=</span><span class="n">host</span><span class="p">,</span>
-<a id="__codelineno-0-23" name="__codelineno-0-23"></a>                                                    <span class="n">web_port</span><span class="o">=</span><span class="n">web_port</span><span class="p">,</span>
-<a id="__codelineno-0-24" name="__codelineno-0-24"></a>                                                    <span class="n">rpc_port</span><span class="o">=</span><span class="n">port</span><span class="p">))</span>
-<a id="__codelineno-0-25" name="__codelineno-0-25"></a>
-<a id="__codelineno-0-26" name="__codelineno-0-26"></a>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">app</span><span class="p">,</span><span class="n">RpcServer</span><span class="p">):</span><span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">app</span><span class="o">.</span><span class="n">start</span><span class="p">(</span><span class="n">host</span><span class="o">=</span><span class="n">host</span><span class="p">,</span>
-<a id="__codelineno-0-27" name="__codelineno-0-27"></a>                                                       <span class="n">port</span><span class="o">=</span><span class="n">port</span><span class="p">))</span>
-<a id="__codelineno-0-28" name="__codelineno-0-28"></a>
-<a id="__codelineno-0-29" name="__codelineno-0-29"></a>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">app</span><span class="p">,</span><span class="n">WebServer</span><span class="p">):</span><span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">app</span><span class="o">.</span><span class="n">start</span><span class="p">(</span><span class="n">host</span><span class="o">=</span><span class="n">host</span><span class="p">,</span>
-<a id="__codelineno-0-30" name="__codelineno-0-30"></a>                                                       <span class="n">port</span><span class="o">=</span><span class="n">web_port</span><span class="p">))</span>
-<a id="__codelineno-0-31" name="__codelineno-0-31"></a>
-<a id="__codelineno-0-32" name="__codelineno-0-32"></a>    <span class="k">if</span> <span class="n">uri</span><span class="p">:</span> 
-<a id="__codelineno-0-33" name="__codelineno-0-33"></a>        <span class="n">host</span><span class="p">,</span><span class="n">port</span> <span class="o">=</span> <span class="n">parse_utran_uri</span><span class="p">(</span><span class="n">uri</span><span class="p">)</span>
-<a id="__codelineno-0-34" name="__codelineno-0-34"></a>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">app</span><span class="p">,</span><span class="n">BaseClient</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">app</span><span class="p">,</span><span class="n">Client</span><span class="p">):</span>
-<a id="__codelineno-0-35" name="__codelineno-0-35"></a>        <span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">app</span><span class="o">.</span><span class="n">start</span><span class="p">(</span><span class="n">host</span><span class="o">=</span><span class="n">host</span><span class="p">,</span><span class="n">port</span><span class="o">=</span><span class="n">port</span><span class="p">))</span>
+<span class="normal"><a href="#__codelineno-0-35">35</a></span>
+<span class="normal"><a href="#__codelineno-0-36">36</a></span>
+<span class="normal"><a href="#__codelineno-0-37">37</a></span>
+<span class="normal"><a href="#__codelineno-0-38">38</a></span>
+<span class="normal"><a href="#__codelineno-0-39">39</a></span>
+<span class="normal"><a href="#__codelineno-0-40">40</a></span>
+<span class="normal"><a href="#__codelineno-0-41">41</a></span>
+<span class="normal"><a href="#__codelineno-0-42">42</a></span>
+<span class="normal"><a href="#__codelineno-0-43">43</a></span>
+<span class="normal"><a href="#__codelineno-0-44">44</a></span>
+<span class="normal"><a href="#__codelineno-0-45">45</a></span>
+<span class="normal"><a href="#__codelineno-0-46">46</a></span>
+<span class="normal"><a href="#__codelineno-0-47">47</a></span>
+<span class="normal"><a href="#__codelineno-0-48">48</a></span>
+<span class="normal"><a href="#__codelineno-0-49">49</a></span>
+<span class="normal"><a href="#__codelineno-0-50">50</a></span>
+<span class="normal"><a href="#__codelineno-0-51">51</a></span>
+<span class="normal"><a href="#__codelineno-0-52">52</a></span>
+<span class="normal"><a href="#__codelineno-0-53">53</a></span>
+<span class="normal"><a href="#__codelineno-0-54">54</a></span>
+<span class="normal"><a href="#__codelineno-0-55">55</a></span>
+<span class="normal"><a href="#__codelineno-0-56">56</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-11" name="__codelineno-0-11"></a><span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="n">app</span><span class="p">:</span><span class="n">Union</span><span class="p">[</span><span class="n">Server</span><span class="p">,</span><span class="n">WebServer</span><span class="p">,</span><span class="n">BaseClient</span><span class="p">,</span><span class="n">Client</span><span class="p">],</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12"></a>        <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13"></a>        <span class="n">host</span><span class="p">:</span><span class="nb">str</span><span class="o">=</span><span class="s1">&#39;127.0.0.1&#39;</span><span class="p">,</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14"></a>        <span class="n">port</span><span class="p">:</span><span class="nb">int</span><span class="o">=</span><span class="mi">8080</span><span class="p">,</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15"></a>        <span class="n">url</span><span class="p">:</span><span class="nb">str</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16"></a>        <span class="n">entry</span><span class="p">:</span><span class="n">callable</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17"></a>        <span class="n">loop</span><span class="p">:</span><span class="n">asyncio</span><span class="o">.</span><span class="n">AbstractEventLoop</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18"></a>        <span class="n">username</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19"></a>        <span class="n">password</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;# 通用的运行器</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21"></a><span class="sd">    Args:</span>
+<a id="__codelineno-0-22" name="__codelineno-0-22"></a><span class="sd">        app: 需要运行的服务</span>
+<a id="__codelineno-0-23" name="__codelineno-0-23"></a><span class="sd">        host: 主机</span>
+<a id="__codelineno-0-24" name="__codelineno-0-24"></a><span class="sd">        port: RPC端口</span>
+<a id="__codelineno-0-25" name="__codelineno-0-25"></a><span class="sd">        web_port: WEB端口</span>
+<a id="__codelineno-0-26" name="__codelineno-0-26"></a><span class="sd">        url: 远程服务地址    </span>
+<a id="__codelineno-0-27" name="__codelineno-0-27"></a><span class="sd">        loop: 指定事件循环</span>
+<a id="__codelineno-0-28" name="__codelineno-0-28"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-29" name="__codelineno-0-29"></a>
+<a id="__codelineno-0-30" name="__codelineno-0-30"></a>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">app</span><span class="p">,</span><span class="n">Server</span><span class="p">):</span>        
+<a id="__codelineno-0-31" name="__codelineno-0-31"></a>        <span class="n">coro</span><span class="o">=</span> <span class="n">app</span><span class="o">.</span><span class="n">start</span><span class="p">(</span><span class="n">host</span><span class="o">=</span><span class="n">host</span><span class="p">,</span>
+<a id="__codelineno-0-32" name="__codelineno-0-32"></a>                <span class="n">port</span><span class="o">=</span><span class="n">port</span><span class="p">,</span>
+<a id="__codelineno-0-33" name="__codelineno-0-33"></a>                <span class="n">username</span><span class="o">=</span><span class="n">username</span><span class="p">,</span>
+<a id="__codelineno-0-34" name="__codelineno-0-34"></a>                <span class="n">password</span><span class="o">=</span><span class="n">password</span><span class="p">)</span>
+<a id="__codelineno-0-35" name="__codelineno-0-35"></a>        <span class="k">if</span> <span class="n">loop</span><span class="p">:</span>
+<a id="__codelineno-0-36" name="__codelineno-0-36"></a>            <span class="n">loop</span><span class="o">.</span><span class="n">run_until_complete</span><span class="p">(</span><span class="n">coro</span><span class="p">)</span>
+<a id="__codelineno-0-37" name="__codelineno-0-37"></a>        <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-38" name="__codelineno-0-38"></a>            <span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">coro</span><span class="p">)</span>
+<a id="__codelineno-0-39" name="__codelineno-0-39"></a>
+<a id="__codelineno-0-40" name="__codelineno-0-40"></a>
+<a id="__codelineno-0-41" name="__codelineno-0-41"></a>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">app</span><span class="p">,</span><span class="n">WebServer</span><span class="p">):</span>
+<a id="__codelineno-0-42" name="__codelineno-0-42"></a>        <span class="n">coro</span><span class="o">=</span> <span class="n">app</span><span class="o">.</span><span class="n">start</span><span class="p">(</span><span class="n">host</span><span class="o">=</span><span class="n">host</span><span class="p">,</span>
+<a id="__codelineno-0-43" name="__codelineno-0-43"></a>                <span class="n">port</span><span class="o">=</span><span class="n">port</span><span class="p">,</span>
+<a id="__codelineno-0-44" name="__codelineno-0-44"></a>                <span class="n">username</span><span class="o">=</span><span class="n">username</span><span class="p">,</span>
+<a id="__codelineno-0-45" name="__codelineno-0-45"></a>                <span class="n">password</span><span class="o">=</span><span class="n">password</span><span class="p">)</span>
+<a id="__codelineno-0-46" name="__codelineno-0-46"></a>        <span class="k">if</span> <span class="n">loop</span><span class="p">:</span>
+<a id="__codelineno-0-47" name="__codelineno-0-47"></a>            <span class="n">loop</span><span class="o">.</span><span class="n">run_until_complete</span><span class="p">(</span><span class="n">coro</span><span class="p">)</span>
+<a id="__codelineno-0-48" name="__codelineno-0-48"></a>        <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-49" name="__codelineno-0-49"></a>            <span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">coro</span><span class="p">)</span>
+<a id="__codelineno-0-50" name="__codelineno-0-50"></a>
+<a id="__codelineno-0-51" name="__codelineno-0-51"></a>
+<a id="__codelineno-0-52" name="__codelineno-0-52"></a>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">app</span><span class="p">,</span><span class="n">Client</span><span class="p">):</span>
+<a id="__codelineno-0-53" name="__codelineno-0-53"></a>        <span class="k">if</span> <span class="n">callable</span><span class="p">(</span><span class="n">entry</span><span class="p">):</span>
+<a id="__codelineno-0-54" name="__codelineno-0-54"></a>            <span class="n">app</span><span class="p">(</span><span class="n">entry</span><span class="p">,</span><span class="n">url</span><span class="o">=</span><span class="n">url</span><span class="p">,</span><span class="n">username</span><span class="o">=</span><span class="n">username</span><span class="p">,</span><span class="n">password</span><span class="o">=</span><span class="n">password</span><span class="p">,</span><span class="n">loop</span><span class="o">=</span><span class="n">loop</span><span class="p">)</span>
+<a id="__codelineno-0-55" name="__codelineno-0-55"></a>        <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-56" name="__codelineno-0-56"></a>            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s1">&#39;Run Error,未指定有效的entry&#39;</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
       </details>
   </div>
