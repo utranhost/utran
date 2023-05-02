@@ -12,6 +12,9 @@ async def main():
         res = await client.subscribe('good',lambda x,y:print(x,y))
         res= await client.multicall(*[client.call(multicall=True).add(1,i) for i in range(0,100)],retransmitFull=False)
         print(res)
+        res = await client.callByname('add',[1,3])
+        print("callByname:",res)
+
         # time.sleep(1)
         # await client.exit()
         res = await client.unsubscribe('good')

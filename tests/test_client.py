@@ -17,8 +17,14 @@ async def main(client:Client):
     res = await client.call.myclass.add(1,2)
     print(res)
 
-    res= await client.multicall(*[client.call(multicall=True).add(1,i) for i in range(0,20)],retransmitFull=False)        
+    res= await client.multicall(*[client.call(multicall=True).add(1,i) for i in range(0,50)],retransmitFull=False)        
     print(res)
+
+    res = await client.callByname('add',[1,3])
+    print("callByname:",res)
+
+    res= await client.multicall(*[client.callByname('add',[1,i],multicall=True) for i in range(0,50)])
+    print("callByname:",res)
 
     await client.unsubscribe('good')
 
@@ -38,7 +44,13 @@ def main(client:Client):
     res = client.call.myclass.add(1,2)
     print(res)
 
-    res= client.multicall(*[client.call(multicall=True).add(1,i) for i in range(0,20)],retransmitFull=False)        
+    res = client.callByname('add',[1,3])
+    print("callByname:",res)
+
+    res= client.multicall(*[client.callByname('add',[1,i],multicall=True) for i in range(0,50)])
+    print("callByname:",res)
+
+    res= client.multicall(*[client.call(multicall=True).add(1,i) for i in range(0,200)],retransmitFull=False)        
     print(res)
 
     client.unsubscribe('good')

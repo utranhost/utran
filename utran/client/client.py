@@ -2,7 +2,7 @@ import asyncio
 from functools import partial
 import threading
 import time
-from typing import Coroutine, Union
+from typing import Any, Coroutine, Union
 from utran.client.baseclient import BaseClient
 import inspect
 from utran.log import logger
@@ -27,6 +27,9 @@ class ExeProxy:
             返回值 (any): 当baseclient未运行时，`client.call.add(1,2)`返回最终的调用结果
         """
         coro:Coroutine = self._accessProxy_._client_._base_call(methodName=self._accessProxy_._temp_name_,args=args,dicts=dicts,**self._accessProxy_._temp_opts_)
+        if self._accessProxy_._temp_opts_.get("multicall"):
+            return coro
+        
         if self._accessProxy_._client_._loop:
             return self._accessProxy_._client_._use_sync(coro)
         else:
@@ -57,6 +60,10 @@ class AccessProxy:
                                 ignore = self._client_._bsclient._ignore if ignore==None else ignore,
                                 multicall = multicall)
         return self
+
+
+
+
 
 
 class Client:
@@ -101,7 +108,7 @@ class Client:
         loop = loop or self._get_event_loop()
         if inspect.iscoroutinefunction(main):            
             try:
-                async def run():                    
+                async def run():
                     await self._bsclient.start(url=url,username=username,password=password)
                     if inspect.signature(main).parameters.values():
                         await main(self)
@@ -226,14 +233,11 @@ class Client:
     
 
 
-    def multicall(self,*calls:Coroutine,ignore:bool=None,retransmitFull:bool=False)->Union[list,Coroutine]:
+    def multicall(self,*calls:Coroutine,retransmitFull:bool=False)->Union[list,Coroutine]:
         """# 合并多次调用远程方法或函数
         支持同步和异步的调用，
-                同步调用方式会：1自动建立连接 -- 2任务执行完毕 --3自动关闭连接，适用于未建立连接时使用。
-                异步调用方式会：1使用现有的连接-- 2任务执行完毕。适用于已建立连接时。
         Args:
             *calls: 需要远程调用协程对象
-            ignore: 是否忽略远程执行结果的错误，忽略错误则值用None填充
             retransmitFull: 于服务器失联后，默认只重发未收到响应的请求，如果为True则重发全部请求
         
         Returns:
@@ -242,7 +246,7 @@ class Client:
         if not self._has_start():
             logger.warning(f'程序已经关闭,无法执行:"multicall"方法')
             return
-        coro = self._bsclient.multicall(*calls,ignore=ignore,retransmitFull=retransmitFull)
+        coro = self._bsclient.multicall(*calls,retransmitFull=retransmitFull)
 
         if self._loop:
             # with关键字调用、同步指定入口
@@ -324,8 +328,6 @@ class Client:
     def call(self)->AccessProxy:
         """远程调用
         支持同步和异步的调用，
-                同步调用方式会：1自动建立连接 -- 2任务执行完毕 --3自动关闭连接，适用于未建立连接时使用。
-                异步调用方式会：1使用现有的连接-- 2任务执行完毕。适用于已建立连接时。
 
         Returns:
             返回远程调用的代理类
@@ -335,6 +337,35 @@ class Client:
             return
         return AccessProxy(self)
     
+
+
+    def callByname(self,
+                   methodName:str,
+                   args:list=tuple(),
+                   dicts:dict=dict(),
+                   *,
+                   timeout:int=None,
+                   multicall:bool=False,
+                   ignore:bool=None)->Union[Any,dict]:
+        """# 通过名称调用远程方法或函数
+        Args:
+            methodName: 远程的方法或函数的名称
+            args: 列表参数
+            dicts: 字典参数
+            timeout: 本地等待响应超时，抛出TimeoutError错误（单位：秒）
+            multicall: 是否标记为合并调用
+            ignore: 是否忽略远程执行结果的错误，忽略错误则值用None填充
+        """
+        coro = self._bsclient.call(methodName,args=args,dicts=dicts,timeout=timeout,multicall=multicall,ignore=ignore)
+        if multicall:
+            return coro
+        
+        if self._loop:            
+            return self._use_sync(coro)
+        else:
+            return coro
+
+
 
     @property
     def _base_call(self):

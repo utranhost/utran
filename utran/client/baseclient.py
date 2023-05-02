@@ -277,9 +277,10 @@ class BaseClient:
             multicall: 是否标记为合并调用
             ignore: 是否忽略远程执行结果的错误，忽略错误则值用None填充
         """
+        ignore = self._ignore if ignore== None else ignore
         request = dict(id=gen_requestId(),requestType=UtType.RPC.value,methodName=methodName,args=args,dicts=dicts)
         if multicall:
-            return request,timeout
+            return request,timeout,ignore
         else:
             try:
                 response:dict = await self._send(request,timeout=timeout)
@@ -289,7 +290,6 @@ class BaseClient:
                 else:
                     raise e
                 
-            ignore = self._ignore if ignore== None else ignore
             if response.get('state') or ignore:
                 return response.get('result')
             else:
@@ -297,17 +297,15 @@ class BaseClient:
 
 
 
-    async def multicall(self,*calls,ignore:bool=None,retransmitFull:bool=False)->list:
+    async def multicall(self,*calls,retransmitFull:bool=False)->list:
         """# 合并多次调用远程方法或函数
         Args:
             *calls: 需要远程调用协程对象
-            ignore: 是否忽略远程执行结果的错误，忽略错误则值用None填充
             retransmitFull: 于服务器失联后，默认只重发未收到响应的请求，如果为True则重发全部请求
 
         Returns:
             执行结果按顺序放在列表中返回
         """
-        ignore = self._ignore if ignore== None else ignore
         success = []
         faild_calls = []
         faild_indexs = []
@@ -317,9 +315,10 @@ class BaseClient:
             requests = calls
         
 
-        res = await asyncio.gather(*[self._send(request,timeout=timeout) for request,timeout in requests],return_exceptions=True)
+        res = await asyncio.gather(*[self._send(request,timeout=timeout) for request,timeout,ignore in requests],return_exceptions=True)
         for i in range(len(res)):
             response:dict = res[i]
+            ignore:bool = requests[i][2]
             if isinstance(response, Exception):
                 # 处理连接错误
                 if str(response)=='disconnection':

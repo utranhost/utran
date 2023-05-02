@@ -22,3 +22,5 @@ x64
 build
 dist
 *.local
+__pycache__
+
