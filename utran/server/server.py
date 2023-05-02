@@ -47,7 +47,7 @@ class Server:
             register: Register = None,
             sub_container: SubscriptionContainer = None,
             severName: str = 'UtranServer',
-            dataMaxsize: int = 1024**10,
+            dataMaxsize: int = 1024**2*10,   # 默认最大支持10M的数据传输
             limitHeartbeatInterval: int = 1,
             dataEncrypt: bool = False,
             workers:int = 1) -> None:
