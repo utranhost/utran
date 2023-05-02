@@ -292,19 +292,24 @@ class UtResponse:
     
 class ClientConnection:
     """客户端连接"""
-    __slots__=('topics','sender','__id','_encrypt','_single_semaphore')
+    __slots__=('topics','sender','__id','_encrypt','_single_semaphore','_isclose')
     def __init__(self,sender:Union[StreamWriter,WebSocketResponse],encrypt:bool=False):
         self.topics = []
         self.__id = str(uuid.uuid4())
         self.sender = sender
         self._encrypt=encrypt
         self._single_semaphore = asyncio.Semaphore(1)
+        self._isclose = False
         
     @property
     def id(self):
         return self.__id
+    
+    def close(self):
+        self._isclose = True
 
     async def send(self,response:UtResponse):
+        if self._isclose:return
         async with self._single_semaphore:     # 每次只允许一个协程调用send方法     
             if isinstance(self.sender,StreamWriter):
                 msg = pack_data2_utran(response.id,response.responseType.value,response.to_dict(),self._encrypt)
