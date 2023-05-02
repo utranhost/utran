@@ -29,7 +29,7 @@ class WebServer(BaseServer):
                  severName: str = 'WebServer', 
                  checkParams: bool = True, 
                  checkReturn: bool = True, 
-                 dataMaxsize: int = 1024*1024, 
+                 dataMaxsize: int = 1024**2*10,   # 默认最大支持10M的数据传输
                  limitHeartbeatInterval: int = 1, 
                  dataEncrypt: bool = False, 
                  workers: int = 0, 
@@ -52,7 +52,6 @@ class WebServer(BaseServer):
     async def start(self,host: str,port: int,username:str=None,password:str=None) -> None:
         self._host = host
         self._port = port
-
         if username!=None or password!=None:
             assert username!=None,'username is None.'
             assert password!=None,'password is None.'
@@ -74,30 +73,42 @@ class WebServer(BaseServer):
     async def handle_request(self,request:web_request.BaseRequest):
         """处理web请求,分发http请求和websocket请求"""
 
-        # 验证身份验证信息
-        auth_header = request.headers.get('Authorization')
-        if auth_header:
-            auth = self.__auth.decode(auth_header)
-        else:
-            auth = None
-            
         wname = request.headers.get('Upgrade')
-        if wname and wname.lower() == 'websocket':
-            ws = WebSocketResponse(max_msg_size=self._dataMaxsize)            
-            await ws.prepare(request)
-            if auth != self.__auth:
-                # 身份验证失败
-                await ws.send_str('身份验证失败!')
-                return
-            else:
-                #  身份验证成功
-                await ws.send_str('ok')
+        if wname and wname.lower() == 'websocket':         
+            # 验证身份验证信息
+            ticket = request.query.get('ticket')
+            auth_header = request.headers.get('Authorization')
+            
+            ws = WebSocketResponse(max_msg_size=self._dataMaxsize)
+            await ws.prepare(request)  
 
-            await self.websocket_handler(ws)
+            auth_64 = auth_header or ticket
+            if auth_64:
+                if not await self.auth_connect(ws,auth_64):
+                    await ws.close()
+                    return
+                isAuth = False
+            else:
+                isAuth = True
+
+            await self.websocket_handler(ws,isAuth)
         else:
             return await self.http_handler(request)
 
 
+    async def auth_connect(self,ws:WebSocketResponse,auth_64:str):
+        try:
+            auth = self.__auth.decode(auth_64)
+        except:
+            await ws.send_str('身份验证失败!')
+            return False
+        
+        if auth == self.__auth:
+            await ws.send_bytes(b'ok')
+            return True
+        else:
+            await ws.send_str('身份验证失败!')
+            return False
 
     async def http_handler(self,request:web_request.BaseRequest):
         """处理web请求""" 
@@ -141,20 +152,31 @@ class WebServer(BaseServer):
             return HttpResponse(status=status,text=ujson.dumps(execute_res),content_type='application/json')
 
 
-    async def websocket_handler(self,ws:WebSocketResponse):
-        """处理websocket请求"""
+    async def websocket_handler(self,ws:WebSocketResponse,isAuth:bool=True):
+        """处理websocket请求
+        isAuth 是否需要身份验证
+        """
         connection = ClientConnection(ws,self._dataEncrypt)
-        t = float('-inf')        
+        t = float('-inf')
         async for msg in ws:
             # 心跳检测
-            # print(msg.type)
             if msg.type == WSMsgType.PING:
                 if time.time() - t < self._limitHeartbeatInterval: break
                 t = time.time()
                 await ws.send_str(HeartBeat.PONG.value.decode())                
                 continue
 
-            if msg.type == WSMsgType.TEXT:
+            # 首次身份验证
+            if isAuth:
+                try:
+                    auth_64 = ujson.loads(msg.data)
+                    await self.auth_connect(ws,auth_64)
+                except:
+                    await self.auth_connect(ws,'')
+                    break
+
+            # 请求处理
+            if msg.type == WSMsgType.TEXT or msg.type == WSMsgType.BINARY:
                 try:
                     if msg.data:
                         res:dict = ujson.loads(msg.data)
@@ -165,6 +187,7 @@ class WebServer(BaseServer):
                 except:
                     break
 
+        connection.close()
         self._sub_container.del_sub(connection.id)
         await ws.close()
         # print('websocket connection closed.')
